@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer (Home Directory Edition)
+# KVM Cloud Image Deployer (Home Dir + Safe SSH Config + Root Access)
 # Usage: ./kdeploy.sh <vm-name>
 # Source: ~/VM/qcow2_images
 # Dest:   ~/VM/disks
@@ -13,14 +13,16 @@ VM_NAME="$1"
 # --- CONFIGURATION ---
 DEFAULT_PASS="linux"
 
-# Your custom directory structure
+# Directory Structure
 ISO_LIB_PATH="$HOME/VM/cloud_images"
 VM_STORAGE_PATH="$HOME/VM/disks"
 
 # ---------------------
 
-VM_USER="${SUDO_USER:-$USER}"
-SSH_KEY_PATH="$HOME/.ssh/id_rsa.pub"
+# Handle if script is run via sudo, doas, or regular user
+VM_USER="${SUDO_USER:-${DOAS_USER:-$USER}}"
+SSH_PUB_KEY="$HOME/.ssh/id_rsa.pub"
+SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}" # Removes .pub extension
 
 # --- 1. Checks ---
 if [[ -z "$VM_NAME" ]]; then
@@ -28,14 +30,31 @@ if [[ -z "$VM_NAME" ]]; then
     exit 1
 fi
 
-# Ensure directories exist
 if [[ ! -d "$ISO_LIB_PATH" ]]; then
     echo "❌ Base Image Directory not found: $ISO_LIB_PATH"
-    echo "   Please move your base images there."
     exit 1
 fi
 mkdir -p "$VM_STORAGE_PATH"
 
+# --- Privilege Detection ---
+# Only use sudo/doas if the user is NOT in the libvirt group
+# if groups "$USER" | grep &>/dev/null "\blibvirt\b"; then
+if id -nG "$USER" | grep -qw "libvirt"; then
+    echo "✅ User '$USER' is in libvirt group. Running without sudo."
+    PRIV_CMD=""
+    # We still might need sudo for specific cleanup tasks if files were created by root previously
+else
+    if command -v doas &> /dev/null; then
+        PRIV_CMD="doas"
+    elif command -v sudo &> /dev/null; then
+        PRIV_CMD="sudo"
+    else
+        echo "❌ Critical: No privilege escalation tool found."
+        exit 1
+    fi
+fi
+
+# Check other dependencies
 for cmd in virsh virt-install cloud-localds qemu-img openssl; do
     if ! command -v $cmd &> /dev/null; then
         echo "❌ Critical dependency missing: '$cmd'"
@@ -43,15 +62,13 @@ for cmd in virsh virt-install cloud-localds qemu-img openssl; do
     fi
 done
 
-if [[ ! -f "$SSH_KEY_PATH" ]]; then
-    echo "❌ SSH key not found at $SSH_KEY_PATH"
+if [[ ! -f "$SSH_PUB_KEY" ]]; then
+    echo "❌ SSH key not found at $SSH_PUB_KEY"
     exit 1
 fi
 
 # --- 2. Dynamic Image Selector ---
 echo "📂 Scanning $ISO_LIB_PATH for base images..."
-
-# Find .qcow2 and .img files
 mapfile -t AVAILABLE_IMAGES < <(find "$ISO_LIB_PATH" -maxdepth 1 -type f \( -name "*.qcow2" -o -name "*.img" \) -printf "%f\n" | sort)
 
 if [ ${#AVAILABLE_IMAGES[@]} -eq 0 ]; then
@@ -73,14 +90,11 @@ done
 BASE_IMG="$ISO_LIB_PATH/$BASE_IMG_NAME"
 OVERLAY_IMG="$VM_STORAGE_PATH/${VM_NAME}.qcow2"
 
-# --- 3. Smart Detection (Format & OS) ---
+# --- 3. Smart Detection ---
 echo "🔍 Inspecting image..."
-
-# Detect Backing File Format
 BACKING_FMT=$(qemu-img info "$BASE_IMG" | grep "file format" | cut -d: -f2 | xargs)
 echo "   -> Backing format: $BACKING_FMT"
 
-# Detect OS Variant
 LOWER_NAME="${BASE_IMG_NAME,,}"
 case "$LOWER_NAME" in
     *rocky*10*)  OS_VARIANT="rocky10" ;;
@@ -109,7 +123,6 @@ WORK_DIR=$(mktemp -d -t kdeploy-XXXXXXXX)
 CLOUD_INIT_DIR="$WORK_DIR/config"
 SEED_ISO="$WORK_DIR/seed.iso"
 mkdir -p "$CLOUD_INIT_DIR"
-
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 # --- 5. Password Setup ---
@@ -120,15 +133,14 @@ echo ""
 VM_PASSWORD="${INPUT_PASS:-$DEFAULT_PASS}"
 PASSWORD_HASH=$(openssl passwd -6 "$VM_PASSWORD")
 
-# --- 6. Cleanup Old VM Resources ---
+# --- 6. Cleanup Old VM ---
 echo "🧹 Cleaning up old resources..."
 virsh destroy "$VM_NAME" 2>/dev/null || true
 virsh undefine "$VM_NAME" --remove-all-storage 2>/dev/null || true
 rm -f "$OVERLAY_IMG" "$VM_STORAGE_PATH/${VM_NAME}-seed.iso"
 
-# --- 7. Cloud-Init Generation ---
+# --- 7. Cloud-Init ---
 echo "🔧 Generating cloud-init..."
-
 cat > "$CLOUD_INIT_DIR/meta-data" <<EOF
 instance-id: ${VM_NAME}-$(date +%s)
 local-hostname: ${VM_NAME}
@@ -140,7 +152,7 @@ disable_root: false
 users:
   - name: root
     ssh_authorized_keys:
-      - $(cat "$SSH_KEY_PATH")
+      - $(cat "$SSH_PUB_KEY")
   - name: $VM_USER
     groups: [ wheel ]
     sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
@@ -148,29 +160,25 @@ users:
     passwd: $PASSWORD_HASH
     shell: /bin/bash
     ssh_authorized_keys:
-      - $(cat "$SSH_KEY_PATH")
+      - $(cat "$SSH_PUB_KEY")
 ssh_pwauth: false
 preserve_hostname: false
 hostname: ${VM_NAME}
 EOF
 
-# --- 8. Create Seed ISO ---
+# --- 8. Seed ISO ---
 cloud-localds -v "$SEED_ISO" "$CLOUD_INIT_DIR/user-data" "$CLOUD_INIT_DIR/meta-data" > /dev/null
 FINAL_ISO="$VM_STORAGE_PATH/${VM_NAME}-seed.iso"
 mv "$SEED_ISO" "$FINAL_ISO"
 
-# --- 9. Create Overlay Disk ---
+# --- 9. Overlay Disk ---
 echo "💾 Creating overlay image..."
 qemu-img create -f qcow2 -b "$BASE_IMG" -F "$BACKING_FMT" "$OVERLAY_IMG" 20G > /dev/null
-
-# --- 10. CRITICAL: Permissions ---
-# Since this is in HOME, we must ensure 'others' (QEMU user) can read the specific files
-# Your folders (disks/qcow2_images) are already o+rx, so we just need o+r on files.
 chmod 644 "$OVERLAY_IMG" "$FINAL_ISO"
 
-# --- 11. Deploy VM ---
+# --- 10. Deploy ---
 echo "🚀 Booting VM: $VM_NAME ($OS_VARIANT)"
-sudo virt-install \
+$PRIV_CMD virt-install \
   --name "$VM_NAME" \
   --memory 2048 \
   --vcpus 2 \
@@ -183,7 +191,7 @@ sudo virt-install \
   --import \
   --noautoconsole
 
-# --- 12. IP Discovery ---
+# --- 11. IP Discovery ---
 echo "⏳ Waiting for IP address..."
 sleep 5
 IP=""
@@ -194,18 +202,63 @@ while [ -z "$IP" ]; do
         echo "   Check console: virsh console $VM_NAME"
         exit 1
     fi
-    
     IP=$(virsh domifaddr "$VM_NAME" 2>/dev/null | awk '/ipv4/ {print $4}' | cut -d/ -f1 || true)
-    
-    if [ -z "$IP" ]; then
-        sleep 2
-        count=$((count + 1))
-        printf "."
-    fi
+    if [ -z "$IP" ]; then sleep 2; count=$((count + 1)); printf "."; fi
 done
 
+# --- Remove the old ip from known hosts ---
+ssh-keygen -R "$IP" 2>/dev/null
+
+# --- 12. Safe SSH Config Update ---
+echo -e "\n📝 Updating ~/.ssh/config..."
+SSH_DIR="$HOME/.ssh"
+SSH_CONFIG="$SSH_DIR/config"
+
+# 1. Check/Create SSH Directory
+if [ ! -d "$SSH_DIR" ]; then
+    echo "   Creating $SSH_DIR..."
+    mkdir -p "$SSH_DIR"
+    chmod 700 "$SSH_DIR"
+fi
+
+# 2. Check/Create Config File
+if [ ! -f "$SSH_CONFIG" ]; then
+    echo "   Creating $SSH_CONFIG..."
+    touch "$SSH_CONFIG"
+    chmod 600 "$SSH_CONFIG"
+# else
+#     # File exists: Create rolling backup before editing
+#     cp "$SSH_CONFIG" "${SSH_CONFIG}.bak"
+fi
+
+# 3. Update Entry (Remove old -> Add new)
+# We always remove the old entry because the VM IP address likely changed.
+# Matches "Host <vmname> <anything>" (User entry) and "Host <vmname>-root" (Root entry)
+sed -i "/^Host $VM_NAME /,/^$/d" "$SSH_CONFIG"
+sed -i "/^Host ${VM_NAME}-root$/,/^$/d" "$SSH_CONFIG"
+
+# 4. Append New Entry
+# Ensure file ends with newline to prevent merging with previous lines
+if [ -s "$SSH_CONFIG" ] && [ "$(tail -c1 "$SSH_CONFIG" | wc -l)" -eq 0 ]; then
+    echo "" >> "$SSH_CONFIG"
+fi
+
+cat >> "$SSH_CONFIG" <<EOF
+Host $VM_NAME $VM_NAME-$VM_USER
+    HostName $IP
+    User $VM_USER
+    IdentityFile $SSH_PRIV_KEY
+
+Host ${VM_NAME}-root
+    HostName $IP
+    User root
+    IdentityFile $SSH_PRIV_KEY
+
+EOF
+
 echo -e "\n✅ VM Ready!"
+echo "-------------------------------------"
 echo "🌐 IP:      $IP"
-echo "👤 User:    $VM_USER"
-echo "🔐 SSH:     ssh $VM_USER@$IP"
-echo "💻 Console: virsh console $VM_NAME"
+echo "👤 Root:    ssh $VM_NAME-root"
+echo "⚡ User:    ssh ${VM_NAME}-$VM_USER"
+echo "-------------------------------------"
