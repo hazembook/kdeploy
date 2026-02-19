@@ -1,18 +1,18 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer (Universal) - v2
-# Usage: ./vm-deploy.sh <vm-name>
+# KVM Cloud Image Deployer with cloud-utils
+# Usage: ./kdeploy.sh <vm-name>
 # ==============================================================================
 
-set -e  # Exit on error
+set -e
 
 VM_NAME="$1"
 BASE_IMG_NAME="Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
 LIBVIRT_PATH="/var/lib/libvirt/images"
 BASE_IMG="$LIBVIRT_PATH/$BASE_IMG_NAME"
 OVERLAY_IMG="$LIBVIRT_PATH/${VM_NAME}.qcow2"
-SEED_ISO="$LIBVIRT_PATH/${VM_NAME}-seed.iso"
-CLOUD_INIT_DIR="./cloud-init"
+SEED_ISO="/tmp/${VM_NAME}-seed.iso"  # Create in /tmp first
+CLOUD_INIT_DIR="/tmp/cloud-init-$VM_NAME"
 
 # --- 1. Checks ---
 if [[ -z "$VM_NAME" ]]; then
@@ -20,36 +20,25 @@ if [[ -z "$VM_NAME" ]]; then
     exit 1
 fi
 
-# Check for required commands
-for cmd in virsh qemu-img virt-install genisoimage; do
-    if ! command -v "$cmd" &> /dev/null; then
-        echo "❌ Required command not found: $cmd"
-        exit 1
-    fi
-done
-
-# Ensure SSH key exists
-if [[ ! -f "$HOME/.ssh/id_rsa.pub" ]]; then
-    echo "❌ SSH public key not found at $HOME/.ssh/id_rsa.pub"
-    echo "   Generate one with: ssh-keygen -t rsa -b 4096"
-    exit 1
-fi
-
-# Ensure Base Image exists
 if [[ ! -f "$BASE_IMG" ]]; then
     echo "❌ Base image not found at: $BASE_IMG"
-    echo "   Download it: sudo curl -L -o $BASE_IMG https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
     exit 1
 fi
 
-# --- 2. Cleanup Old VM ---
+if [[ ! -f "$HOME/.ssh/id_rsa.pub" ]]; then
+    echo "❌ SSH key not found. Generate with: ssh-keygen -t rsa -b 4096"
+    exit 1
+fi
+
+# --- 2. Cleanup ---
 echo "🧹 Cleaning up old resources..."
 virsh destroy "$VM_NAME" 2>/dev/null || true
 virsh undefine "$VM_NAME" --remove-all-storage 2>/dev/null || true
-rm -f "$OVERLAY_IMG" "$SEED_ISO"
+sudo rm -f "$OVERLAY_IMG" "$LIBVIRT_PATH/${VM_NAME}-seed.iso"
 
-# --- 3. Create Cloud-Init Config ---
+# --- 3. Cloud-Init Config ---
 echo "🔧 Creating cloud-init configuration..."
+rm -rf "$CLOUD_INIT_DIR"
 mkdir -p "$CLOUD_INIT_DIR"
 
 # Create meta-data
@@ -70,47 +59,34 @@ users:
       - $(cat "$HOME/.ssh/id_rsa.pub")
 
 ssh_pwauth: false
-disable_root: true
 preserve_hostname: false
 hostname: ${VM_NAME}
-fqdn: ${VM_NAME}.local
-
-# Install packages
-packages:
-  - vim
-  - htop
-  - tmux
-
-# Update all packages on first boot
-package_update: true
-package_upgrade: true
-
-# Final message
-final_message: "VM ${VM_NAME} is ready! IP: \$(hostname -I)"
 EOF
 
-# --- 4. Create Seed ISO ---
-echo "💿 Creating seed ISO..."
-genisoimage \
-  -output "$SEED_ISO" \
-  -volid cidata \
-  -joliet \
-  -rock \
-  "$CLOUD_INIT_DIR/user-data" \
-  "$CLOUD_INIT_DIR/meta-data"
+# --- 4. Create Seed ISO with cloud-localds ---
+echo "💿 Creating seed ISO with cloud-localds..."
+cloud-localds -v "$SEED_ISO" "$CLOUD_INIT_DIR/user-data" "$CLOUD_INIT_DIR/meta-data"
 
-sudo chown libvirt-qemu:kvm "$SEED_ISO" 2>/dev/null || sudo chown nobody:kvm "$SEED_ISO"
-sudo chmod 644 "$SEED_ISO"
+# Move to libvirt directory with correct permissions
+sudo mv "$SEED_ISO" "$LIBVIRT_PATH/${VM_NAME}-seed.iso"
+sudo chown libvirt-qemu:kvm "$LIBVIRT_PATH/${VM_NAME}-seed.iso" 2>/dev/null || \
+    sudo chown nobody:kvm "$LIBVIRT_PATH/${VM_NAME}-seed.iso"
+sudo chmod 644 "$LIBVIRT_PATH/${VM_NAME}-seed.iso"
+
+# Cleanup temp files
+rm -rf "$CLOUD_INIT_DIR"
+SEED_ISO="$LIBVIRT_PATH/${VM_NAME}-seed.iso"  # Update path for virt-install
 
 # --- 5. Create Overlay Disk ---
 echo "💾 Creating overlay image..."
-qemu-img create -f qcow2 -b "$BASE_IMG" -F qcow2 "$OVERLAY_IMG" 20G
-sudo chown libvirt-qemu:kvm "$OVERLAY_IMG" 2>/dev/null || sudo chown nobody:kvm "$OVERLAY_IMG"
+sudo qemu-img create -f qcow2 -b "$BASE_IMG" -F qcow2 "$OVERLAY_IMG" 20G
+sudo chown libvirt-qemu:kvm "$OVERLAY_IMG" 2>/dev/null || \
+    sudo chown nobody:kvm "$OVERLAY_IMG"
 sudo chmod 660 "$OVERLAY_IMG"
 
 # --- 6. Deploy ---
 echo "🚀 Booting VM: $VM_NAME"
-virt-install \
+sudo virt-install \
   --name "$VM_NAME" \
   --memory 2048 \
   --vcpus 2 \
@@ -123,17 +99,15 @@ virt-install \
   --noautoconsole
 
 # --- 7. Wait and Show Info ---
-echo "⏳ Waiting for VM to get IP..."
+echo "⏳ Waiting for IP..."
 sleep 15
 
-echo -e "\n📊 VM Information:"
-virsh dominfo "$VM_NAME"
-echo -e "\n🌐 Network:"
-virsh domifaddr "$VM_NAME"
-
-IP=$(virsh domifaddr "$VM_NAME" | grep ipv4 | awk '{print $4}' | cut -d/ -f1)
+IP=$(virsh domifaddr "$VM_NAME" | awk '/ipv4/ {print $4}' | cut -d/ -f1)
 if [[ -n "$IP" ]]; then
-    echo -e "\n✅ Ready to SSH:"
-    echo "   ssh hazem@$IP"
+    echo -e "\n✅ VM ready!"
+    echo "🌐 IP: $IP"
+    echo "🔐 SSH: ssh hazem@$IP"
+else
+    echo "⚠️  Could not get IP. Check: virsh domifaddr $VM_NAME"
 fi
 
