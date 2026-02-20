@@ -45,14 +45,17 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 
 ## Features
 
+- **Speed**: Deploy a VM in 14 seconds (with `-y` flag)
 - **Interactive Setup**: Guided configuration with sensible defaults
 - **Smart Path Handling**: User-owned or system-managed storage paths
 - **Image Download**: Built-in catalog of popular cloud images
 - **Automatic OS Detection**: Detects Rocky, Ubuntu, Debian, Fedora from filename
 - **Resource Selection**: Choose RAM, vCPUs, and disk size
 - **SSH Config Management**: Automatic SSH host configuration
-- **Dual IP Discovery**: Works with qemu-guest-agent or DHCP leases
+- **Fast IP Discovery**: Uses DHCP leases (no qemu-guest-agent needed)
 - **Dependency Management**: Auto-detects and offers to install missing packages
+- **Pre-flight Checks**: KVM, libvirt, network, storage pool, disk space
+- **Permission Handling**: Auto-detects and offers to add user to libvirt group
 
 ## Requirements
 
@@ -90,6 +93,9 @@ chmod +x kdeploy.sh
 # Basic deployment (follow interactive prompts)
 ./kdeploy.sh myvm
 
+# Fast deployment (skip all confirmations, ~14 seconds!)
+./kdeploy.sh myvm -y
+
 # Specify disk size
 ./kdeploy.sh myvm 50G
 
@@ -98,6 +104,9 @@ chmod +x kdeploy.sh
 
 # Use custom paths (one-time override)
 ./kdeploy.sh myvm -i /path/to/images -s /path/to/storage
+
+# Fully non-interactive (custom paths + skip confirmations)
+./kdeploy.sh myvm -i /path/to/images -s /path/to/storage -y
 
 # Reconfigure default paths
 ./kdeploy.sh --reconfig
@@ -173,7 +182,8 @@ Create isolated dev environments in seconds:
 |--------|-------------------|---------------|
 | GUI (Virt-Manager) | 15-30 min | Yes |
 | Text Installer | 10-20 min | Yes |
-| **kdeploy** | **1-2 min** | **No** |
+| **kdeploy** (interactive) | ~30 sec | **No** |
+| **kdeploy** (`-y` flag) | **~14 sec** | **No** |
 
 ## License
 
