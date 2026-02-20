@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer v3.2
+# KVM Cloud Image Deployer v3.3
 # "The Professor's Edition" - Configurable Paths, Image Downloads, Robust Deploy
 # ==============================================================================
 
@@ -81,7 +81,7 @@ SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}"
 
 show_help() {
     cat <<EOF
-KVM Cloud Image Deployer v3.2
+KVM Cloud Image Deployer v3.3
 
 Usage: $0 <vm_name> [disk_size] [options]
 
@@ -621,6 +621,8 @@ else
 fi
 
 
+IMAGE_SELECTED=false
+
 PS3="👉 Select Base Image (number): "
 select choice in "${AVAILABLE_IMAGES[@]}" "📥 Download new image"; do
     if [[ "$choice" == "📥 Download new image" ]]; then
@@ -665,15 +667,29 @@ select choice in "${AVAILABLE_IMAGES[@]}" "📥 Download new image"; do
             exit 1
         fi
         
+        echo ""
+        echo "Available Images:"
+        i=1
+        for img in "${AVAILABLE_IMAGES[@]}"; do
+            echo "  $i) $img"
+            ((i++))
+        done
+        echo ""
+        
         PS3="👉 Select Base Image (number): "
         select img in "${AVAILABLE_IMAGES[@]}"; do
             if [[ -n "$img" ]]; then
                 BASE_IMG_NAME="$img"
+                IMAGE_SELECTED=true
                 break
             else
                 echo "❌ Invalid selection."
             fi
         done
+        
+        if [[ "$IMAGE_SELECTED" == true ]]; then
+            break
+        fi
     elif [[ -n "$choice" ]]; then
         BASE_IMG_NAME="$choice"
         break
