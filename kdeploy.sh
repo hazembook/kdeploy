@@ -533,16 +533,21 @@ if $PRIV_CMD virsh net-info default &>/dev/null; then
     else
         echo "   ⚠️  Default network exists but not active"
         echo "   Attempting to start..."
-        if $PRIV_CMD virsh net-start default 2>/dev/null; then
+        if $PRIV_CMD virsh net-start default 2>&1; then
             echo "   ✅ Started default network"
         else
             echo "   ⚠️  Could not start default network"
+            echo "   Error: $($PRIV_CMD virsh net-start default 2>&1 || true)"
+            echo "   Try: sudo virsh net-start default"
         fi
     fi
 else
     echo "   ⚠️  Default network not defined"
     echo "   Creating default network..."
-    $PRIV_CMD virsh net-define /dev/stdin <<'EOF' 2>/dev/null && $PRIV_CMD virsh net-start default 2>/dev/null && echo "   ✅ Created and started default network" || echo "   ⚠️  Could not create default network"
+    
+    # Create temporary XML file for network definition
+    NET_XML=$(mktemp)
+    cat > "$NET_XML" <<'EOF'
 <network>
   <name>default</name>
   <forward mode='nat'/>
@@ -554,6 +559,20 @@ else
   </ip>
 </network>
 EOF
+    
+    if $PRIV_CMD virsh net-define "$NET_XML" 2>/dev/null; then
+        rm -f "$NET_XML"
+        if $PRIV_CMD virsh net-start default 2>/dev/null; then
+            $PRIV_CMD virsh net-autostart default 2>/dev/null
+            echo "   ✅ Created, started, and enabled autostart for default network"
+        else
+            echo "   ⚠️  Created network but could not start it"
+        fi
+    else
+        rm -f "$NET_XML"
+        echo "   ❌ Could not create default network"
+        echo "   Try manually: sudo virsh net-define <xml-file> && sudo virsh net-start default"
+    fi
 fi
 
 # 4. SSH Key Check & Generation
