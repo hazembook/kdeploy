@@ -528,7 +528,7 @@ fi
 echo "🔍 Checking default network..."
 if $PRIV_CMD virsh net-info default &>/dev/null; then
     NET_STATE=$($PRIV_CMD virsh net-info default 2>/dev/null | grep "Active:" | awk '{print $2}')
-    if [[ "$NET_STATE" == "Yes" ]]; then
+    if [[ "${NET_STATE,,}" == "yes" ]]; then
         echo "   ✅ Default network is active"
     else
         echo "   ⚠️  Default network exists but not active"
