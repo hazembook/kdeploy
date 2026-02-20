@@ -497,13 +497,27 @@ check_permissions() {
         echo ""
         echo "⚠️  Missing group membership: ${missing_groups[*]}"
         echo ""
-        echo "   For full libvirt access without sudo, add yourself to the group:"
-        echo "   "
-        echo "      sudo usermod -aG libvirt $USER"
-        echo "      "
-        echo "   Then log out and back in (or run: newgrp libvirt)"
+        echo "   This is needed for full libvirt access without sudo."
         echo ""
-        echo "   The script will continue using privilege escalation (sudo/doas)."
+        read -p "   Add user '$USER' to libvirt group now? [Y/n] " add_group
+        add_group="${add_group:-Y}"
+        
+        if [[ "${add_group,,}" == "y" ]]; then
+            echo "   Adding user to libvirt group..."
+            if command -v doas &>/dev/null; then
+                doas usermod -aG libvirt "$USER" 2>/dev/null && echo "   ✅ Added to libvirt group" || echo "   ❌ Failed to add group"
+            elif command -v sudo &>/dev/null; then
+                sudo usermod -aG libvirt "$USER" 2>/dev/null && echo "   ✅ Added to libvirt group" || echo "   ❌ Failed to add group"
+            else
+                echo "   ❌ No privilege escalation tool found"
+                echo "   Run manually: sudo usermod -aG libvirt $USER"
+            fi
+        else
+            echo "   Skipping. Using privilege escalation (sudo/doas) instead."
+        fi
+        echo ""
+        echo "   Note: Group changes require logging out and back in to take effect."
+        echo "   For this session, the script will use sudo/doas."
     fi
     
     # Check libvirt socket
@@ -519,10 +533,7 @@ check_permissions() {
     fi
 }
 
-if ! check_permissions 2>/dev/null; then
-    # Continue with privilege escalation
-    :
-fi
+check_permissions
 
 if id -nG "$USER" | grep -qw "libvirt"; then
     PRIV_CMD=""
