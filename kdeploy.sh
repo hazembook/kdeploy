@@ -868,54 +868,64 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 # --- PASSWORD SETUP ---
 echo ""
-echo "🔑 Setup VM Password (Enter for default: '$DEFAULT_PASS')"
-read -s -p "   Password: " INPUT_PASS
-echo ""
-VM_PASSWORD="${INPUT_PASS:-$DEFAULT_PASS}"
+if [[ "$SKIP_CONFIRM" == true ]]; then
+    echo "🔑 Using default password: $DEFAULT_PASS"
+    VM_PASSWORD="$DEFAULT_PASS"
+else
+    echo "🔑 Setup VM Password (Enter for default: '$DEFAULT_PASS')"
+    read -s -p "   Password: " INPUT_PASS
+    echo ""
+    VM_PASSWORD="${INPUT_PASS:-$DEFAULT_PASS}"
+fi
 PASSWORD_HASH=$(openssl passwd -6 "$VM_PASSWORD")
 
 # --- VM RESOURCES ---
 echo ""
-echo "⚙️  VM Resources (Enter for defaults):"
-echo "   Disk:      $VM_SIZE"
-
-if [[ -z "$OVERRIDE_RAM" ]]; then
-    read -p "   RAM (MB) [${VM_RAM}]: " input_ram
-    VM_RAM="${input_ram:-$VM_RAM}"
+if [[ "$SKIP_CONFIRM" == true ]]; then
+    echo "⚙️  Using defaults: RAM=${VM_RAM}MB, vCPUs=${VM_CPUS}, Disk=${VM_SIZE}"
 else
-    echo "   RAM:       $VM_RAM (flag)"
+    echo "⚙️  VM Resources (Enter for defaults):"
+    echo "   Disk:      $VM_SIZE"
+
+    if [[ -z "$OVERRIDE_RAM" ]]; then
+        read -p "   RAM (MB) [${VM_RAM}]: " input_ram
+        VM_RAM="${input_ram:-$VM_RAM}"
+    else
+        echo "   RAM:       $VM_RAM (flag)"
+    fi
 fi
 
-if [[ -z "$OVERRIDE_CPUS" ]]; then
+if [[ -z "$OVERRIDE_CPUS" && "$SKIP_CONFIRM" != true ]]; then
     read -p "   vCPUs    [${VM_CPUS}]: " input_cpu
     VM_CPUS="${input_cpu:-$VM_CPUS}"
-else
+elif [[ "$SKIP_CONFIRM" != true ]]; then
     echo "   vCPUs:     $VM_CPUS (flag)"
 fi
 
 # --- PACKAGE SELECTION ---
-echo ""
-echo "📦 Package Selection"
-echo "   [1] None (default - fastest, cloud images usually have qemu-guest-agent)"
-echo "   [2] Custom packages"
-echo ""
-read -p "   Choice [1]: " pkg_choice
-pkg_choice="${pkg_choice:-1}"
+if [[ "$SKIP_CONFIRM" == true ]]; then
+    echo "📦 Using default packages: None"
+    PACKAGES=()
+else
+    echo ""
+    echo "📦 Package Selection"
+    echo "   [1] None (default - fastest, cloud images usually have qemu-guest-agent)"
+    echo "   [2] Custom packages"
+    echo ""
+    read -p "   Choice [1]: " pkg_choice
+    pkg_choice="${pkg_choice:-1}"
 
-case "$pkg_choice" in
-    1)  # None (default, fastest)
-        PACKAGES=()
-        ;;
-    2)  # Custom
-        echo ""
-        read -p "   Enter packages (space-separated): " custom_pkgs
-        PACKAGES=($custom_pkgs)
-        ;;
-    *)
-        echo "   Invalid choice, using default (none)"
-        PACKAGES=()
-        ;;
-esac
+    case "$pkg_choice" in
+        1)  # None (default, fastest)
+            PACKAGES=()
+            ;;
+        2)  # Custom
+            echo ""
+            read -p "   Enter packages (space-separated): " custom_pkgs
+            PACKAGES=($custom_pkgs)
+            ;;
+    esac
+fi
 
 # --- CLEANUP OLD VM ---
 echo ""
