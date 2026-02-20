@@ -484,6 +484,46 @@ else
 fi
 
 # --- PRIVILEGE DETECTION ---
+check_permissions() {
+    local missing_groups=()
+    local needed_groups=("libvirt")
+    
+    # Check for libvirt group
+    if ! id -nG "$USER" | grep -qw "libvirt"; then
+        missing_groups+=("libvirt")
+    fi
+    
+    if [[ ${#missing_groups[@]} -gt 0 ]]; then
+        echo ""
+        echo "⚠️  Missing group membership: ${missing_groups[*]}"
+        echo ""
+        echo "   For full libvirt access without sudo, add yourself to the group:"
+        echo "   "
+        echo "      sudo usermod -aG libvirt $USER"
+        echo "      "
+        echo "   Then log out and back in (or run: newgrp libvirt)"
+        echo ""
+        echo "   The script will continue using privilege escalation (sudo/doas)."
+    fi
+    
+    # Check libvirt socket
+    if [[ -S /var/run/libvirt/libvirt-sock ]]; then
+        if [[ -r /var/run/libvirt/libvirt-sock ]]; then
+            return 0
+        else
+            echo ""
+            echo "⚠️  Cannot access libvirt socket."
+            echo "   Your user needs libvirt group membership."
+            return 1
+        fi
+    fi
+}
+
+if ! check_permissions 2>/dev/null; then
+    # Continue with privilege escalation
+    :
+fi
+
 if id -nG "$USER" | grep -qw "libvirt"; then
     PRIV_CMD=""
 else
