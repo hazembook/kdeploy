@@ -889,29 +889,34 @@ fi
 # --- PACKAGE SELECTION ---
 echo ""
 echo "📦 Package Selection"
-echo "   [1] Default (qemu-guest-agent, git, vim, htop)"
-echo "   [2] Minimal (qemu-guest-agent only - for IP discovery)"
-echo "   [3] None (no packages)"
+echo "   [1] Default (git, vim, htop)"
+echo "   [2] Minimal (qemu-guest-agent only)"
+echo "   [3] None (no packages - fastest)"
 echo "   [4] Custom"
 echo ""
-read -p "   Choice [1]: " pkg_choice
-pkg_choice="${pkg_choice:-1}"
+read -p "   Choice [3]: " pkg_choice
+pkg_choice="${pkg_choice:-3}"
 
 case "$pkg_choice" in
     1)  # Default
-        PACKAGES=(qemu-guest-agent git vim htop)
+        PACKAGES=(git vim htop)
         ;;
-    2)  # Minimal
-        PACKAGES=(qemu-guest-agent)
+    2)  # Minimal (qemu-guest-agent)
+        read -p "   Install qemu-guest-agent? [y/N] " install_qga
+        if [[ "${install_qga,,}" == "y" ]]; then
+            PACKAGES=(qemu-guest-agent)
+        else
+            PACKAGES=()
+        fi
         ;;
-    3)  # None
+    3)  # None (fastest, recommended)
         PACKAGES=()
         ;;
     4)  # Custom
         echo ""
         read -p "   Enter packages (space-separated): " custom_pkgs
-        read -p "   Install qemu-guest-agent for IP discovery? [Y/n] " install_qga
-        if [[ "${install_qga,,}" != "n" ]]; then
+        read -p "   Install qemu-guest-agent for IP discovery? [y/N] " install_qga
+        if [[ "${install_qga,,}" == "y" ]]; then
             PACKAGES=($custom_pkgs qemu-guest-agent)
         else
             PACKAGES=($custom_pkgs)
