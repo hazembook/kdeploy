@@ -98,12 +98,26 @@ Options:
     --show-config          Show current configuration
     -h, --help             Show this help message
 
+Pre-flight Checks (automatic):
+    - KVM kernel module verification
+    - Libvirt daemon status
+    - Default network setup
+    - SSH key verification/generation
+    - Required package dependencies
+
+Interactive Prompts:
+    - First run: Configure image & storage paths
+    - Each run: Select base image (or download new)
+    - Each run: Set VM password
+    - Each run: Confirm RAM/vCPU/disk (or use defaults)
+
 Examples:
     $0 webserver                    Deploy VM with defaults
     $0 webserver 50G                Deploy VM with 50GB disk
     $0 webserver -r 4096 -c 4       Deploy with 4GB RAM, 4 vCPUs
-    $0 webserver -i /tmp/img        Use custom image path (one-time)
-    $0 --reconfig                   Reconfigure saved paths
+    $0 webserver -i /tmp/img -s /tmp/vms  Use custom paths
+    $0 --reconfig                   Reconfigure default paths
+    $0 --show-config                Show current configuration
 
 Configuration file: $CONFIG_FILE
 EOF
