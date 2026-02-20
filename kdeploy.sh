@@ -444,7 +444,19 @@ VM_NAME="${POSITIONAL_ARGS[0]:-}"
 VM_SIZE="${POSITIONAL_ARGS[1]:-$DEFAULT_VM_SIZE}"
 
 # --- INITIALIZE CONFIG ---
+# Save flag-provided paths before loading config
+FLAG_IMAGE_PATH="$IMAGE_PATH"
+FLAG_STORAGE_PATH="$STORAGE_PATH"
+
 load_config
+
+# Apply overrides after loading config (flags take precedence)
+if [[ -n "$OVERRIDE_IMAGE_PATH" ]]; then
+    IMAGE_PATH="$FLAG_IMAGE_PATH"
+fi
+if [[ -n "$OVERRIDE_STORAGE_PATH" ]]; then
+    STORAGE_PATH="$FLAG_STORAGE_PATH"
+fi
 
 # --- FIRST RUN OR RECONFIG ---
 if [[ ! -f "$CONFIG_FILE" ]] || [[ "$RECONFIG" == true ]]; then
