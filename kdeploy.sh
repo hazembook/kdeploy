@@ -91,6 +91,7 @@ Arguments:
 
 Options:
     -r, --ram MB           RAM in MB (default: ${DEFAULT_RAM})
+    -y, --yes             Skip all confirmations
     -c, --cpu COUNT        Number of vCPUs (default: ${DEFAULT_CPUS})
     -i, --image-path DIR   Override image library path (one-time)
     -s, --storage-path DIR Override VM storage path (one-time)
@@ -113,6 +114,7 @@ Interactive Prompts:
 
 Examples:
     $0 webserver                    Deploy VM with defaults
+    $0 webserver -y                 Deploy VM, skip confirmations
     $0 webserver 50G                Deploy VM with 50GB disk
     $0 webserver -r 4096 -c 4       Deploy with 4GB RAM, 4 vCPUs
     $0 webserver -i /tmp/img -s /tmp/vms  Use custom paths
@@ -385,10 +387,15 @@ download_image() {
 
 # --- PARSE ARGUMENTS ---
 RECONFIG=false
+SKIP_CONFIRM=false
 POSITIONAL_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -y|--yes)
+            SKIP_CONFIRM=true
+            shift
+            ;;
         --reconfig)
             RECONFIG=true
             shift
@@ -723,7 +730,7 @@ if $PRIV_CMD virsh dominfo "$VM_NAME" &>/dev/null; then
     echo "⚠️  VM '$VM_NAME' already exists - will be DESTROYED and recreated!"
 fi
 
-if [[ "$CONFIRM_NEEDED" == true ]]; then
+if [[ "$CONFIRM_NEEDED" == true && "$SKIP_CONFIRM" != true ]]; then
     echo ""
     read -p "   Continue? [Y/n] " confirm
     if [[ "${confirm,,}" == "n" ]]; then
