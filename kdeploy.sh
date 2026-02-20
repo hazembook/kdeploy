@@ -483,6 +483,19 @@ else
     mkdir -p "$STORAGE_PATH" 2>/dev/null || true
 fi
 
+# Disk Space Check
+echo "🔍 Checking disk space..."
+STORAGE_DIR=$(df "$STORAGE_PATH" | tail -1 | awk '{print $4}')  # Available space in KB
+REQUIRED_SPACE=20971520  # 20GB in KB (approx)
+
+if [[ $STORAGE_DIR -lt $REQUIRED_SPACE ]]; then
+    echo "   ⚠️  Low disk space in $STORAGE_PATH"
+    echo "   Available: $((STORAGE_DIR / 1024 / 1024))GB"
+    echo "   Recommended: 20GB+ for comfortable use"
+else
+    echo "   ✅ Sufficient disk space: $((STORAGE_DIR / 1024 / 1024))GB available"
+fi
+
 # --- PRIVILEGE DETECTION ---
 check_permissions() {
     local missing_groups=()
@@ -558,7 +571,27 @@ elif [[ -e /dev/kvm ]]; then
     echo "   ✅ KVM device available (/dev/kvm)"
 else
     echo "   ⚠️  KVM not detected. Virtualization may be disabled in BIOS/UEFI."
-    echo "   If nested virtualization is needed, this may cause performance issues."
+    echo "   Enable virtualization in BIOS/UEFI settings."
+fi
+
+# 1b. Nested Virtualization Check (optional)
+echo "🔍 Checking nested virtualization..."
+if [[ -e /sys/module/kvm_intel/parameters/nested ]] 2>/dev/null; then
+    NESTED=$(cat /sys/module/kvm_intel/parameters/nested 2>/dev/null)
+    if [[ "$NESTED" == "Y" || "$NESTED" == "1" ]]; then
+        echo "   ✅ Nested virtualization enabled"
+    else
+        echo "   ℹ️  Nested virtualization disabled (VMs inside VMs won't work)"
+    fi
+elif [[ -e /sys/module/kvm_amd/parameters/nested ]] 2>/dev/null; then
+    NESTED=$(cat /sys/module/kvm_amd/parameters/nested 2>/dev/null)
+    if [[ "$NESTED" == "Y" || "$NESTED" == "1" ]]; then
+        echo "   ✅ Nested virtualization enabled"
+    else
+        echo "   ℹ️  Nested virtualization disabled (VMs inside VMs won't work)"
+    fi
+else
+    echo "   ℹ️  Nested virtualization status unknown"
 fi
 
 # 2. Libvirt Service Check
@@ -626,7 +659,29 @@ EOF
     fi
 fi
 
-# 4. SSH Key Check & Generation
+# 4. Storage Pool Check
+echo "🔍 Checking storage pool..."
+if $PRIV_CMD virsh pool-info default &>/dev/null; then
+    POOL_STATE=$($PRIV_CMD virsh pool-info default 2>/dev/null | grep "State:" | awk '{print $2}')
+    if [[ "${POOL_STATE,,}" == "running" ]]; then
+        echo "   ✅ Default storage pool is active"
+    else
+        echo "   ⚠️  Storage pool exists but not running"
+        read -p "   Start storage pool now? [Y/n] " start_pool
+        start_pool="${start_pool:-Y}"
+        if [[ "${start_pool,,}" == "y" ]]; then
+            if $PRIV_CMD virsh pool-start default 2>/dev/null; then
+                echo "   ✅ Started storage pool"
+            else
+                echo "   ⚠️  Could not start storage pool"
+            fi
+        fi
+    fi
+else
+    echo "   ℹ️  Default storage pool not configured (using custom path)"
+fi
+
+# 5. SSH Key Check & Generation
 echo "🔍 Checking SSH key..."
 if [[ ! -f "$SSH_PUB_KEY" ]]; then
     echo "   ⚠️  SSH key not found at $SSH_PUB_KEY"
