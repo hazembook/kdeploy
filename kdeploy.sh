@@ -886,6 +886,43 @@ else
     echo "   vCPUs:     $VM_CPUS (flag)"
 fi
 
+# --- PACKAGE SELECTION ---
+echo ""
+echo "📦 Package Selection"
+echo "   [1] Default (qemu-guest-agent, git, vim, htop)"
+echo "   [2] Minimal (qemu-guest-agent only - for IP discovery)"
+echo "   [3] None (no packages)"
+echo "   [4] Custom"
+echo ""
+read -p "   Choice [1]: " pkg_choice
+pkg_choice="${pkg_choice:-1}"
+
+case "$pkg_choice" in
+    1)  # Default
+        PACKAGES=(qemu-guest-agent git vim htop)
+        ;;
+    2)  # Minimal
+        PACKAGES=(qemu-guest-agent)
+        ;;
+    3)  # None
+        PACKAGES=()
+        ;;
+    4)  # Custom
+        echo ""
+        read -p "   Enter packages (space-separated): " custom_pkgs
+        read -p "   Install qemu-guest-agent for IP discovery? [Y/n] " install_qga
+        if [[ "${install_qga,,}" != "n" ]]; then
+            PACKAGES=($custom_pkgs qemu-guest-agent)
+        else
+            PACKAGES=($custom_pkgs)
+        fi
+        ;;
+    *)
+        echo "   Invalid choice, using default"
+        PACKAGES=(qemu-guest-agent git vim htop)
+        ;;
+esac
+
 # --- CLEANUP OLD VM ---
 echo ""
 echo "🧹 Cleaning up old resources..."
@@ -900,13 +937,9 @@ fi
 
 # --- CLOUD-INIT ---
 echo "🔧 Generating cloud-init..."
-cat > "$CLOUD_INIT_DIR/meta-data" <<EOF
-instance-id: ${VM_NAME}-$(date +%s)
-local-hostname: ${VM_NAME}
-EOF
 
-cat > "$CLOUD_INIT_DIR/user-data" <<EOF
-#cloud-config
+# Build cloud-init content dynamically
+CLOUDINIT_CONTENT="#cloud-config
 disable_root: false
 users:
   - name: root
@@ -914,7 +947,7 @@ users:
       - $(cat "$SSH_PUB_KEY")
   - name: $VM_USER
     groups: [ wheel ]
-    sudo: [ "ALL=(ALL) NOPASSWD:ALL" ]
+    sudo: [ \"ALL=(ALL) NOPASSWD:ALL\" ]
     lock_passwd: false
     passwd: $PASSWORD_HASH
     shell: /bin/bash
@@ -923,13 +956,27 @@ users:
 ssh_pwauth: false
 preserve_hostname: false
 hostname: ${VM_NAME}
-packages:
-  - qemu-guest-agent
-  - git
-  - vim
-  - htop
-runcmd:
-  - systemctl enable --now qemu-guest-agent
+"
+
+# Add packages if any
+if [[ ${#PACKAGES[@]} -gt 0 ]]; then
+    CLOUDINIT_CONTENT+="packages:\n"
+    for pkg in "${PACKAGES[@]}"; do
+        CLOUDINIT_CONTENT+="  - $pkg\n"
+    done
+fi
+
+# Add qemu-guest-agent service if installed
+if [[ " ${PACKAGES[*]} " =~ "qemu-guest-agent" ]]; then
+    CLOUDINIT_CONTENT+="runcmd:\n"
+    CLOUDINIT_CONTENT+="  - systemctl enable --now qemu-guest-agent\n"
+fi
+
+echo -e "$CLOUDINIT_CONTENT" > "$CLOUD_INIT_DIR/user-data"
+
+cat > "$CLOUD_INIT_DIR/meta-data" <<EOF
+instance-id: ${VM_NAME}-$(date +%s)
+local-hostname: ${VM_NAME}
 EOF
 
 # --- SEED ISO & OVERLAY ---
