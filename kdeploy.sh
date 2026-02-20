@@ -11,6 +11,8 @@ CONFIG_FILE="$HOME/.config/kdeploy.conf"
 DEFAULT_IMAGE_PATH="$HOME/VM/cloud_images"
 DEFAULT_STORAGE_PATH="/var/lib/libvirt/images"
 DEFAULT_VM_SIZE="20G"
+DEFAULT_RAM="2048"
+DEFAULT_CPUS="2"
 DEFAULT_PASS="linux"
 
 # --- IMAGE CATALOG FOR DOWNLOADS ---
@@ -61,8 +63,12 @@ IMAGE_PATH=""
 STORAGE_PATH=""
 VM_NAME=""
 VM_SIZE=""
+VM_RAM=""
+VM_CPUS=""
 OVERRIDE_IMAGE_PATH=""
 OVERRIDE_STORAGE_PATH=""
+OVERRIDE_RAM=""
+OVERRIDE_CPUS=""
 
 # ---------------------
 # Handle if script is run via sudo/doas
@@ -84,6 +90,8 @@ Arguments:
     disk_size       Size of VM disk (default: ${DEFAULT_VM_SIZE})
 
 Options:
+    -r, --ram MB           RAM in MB (default: ${DEFAULT_RAM})
+    -c, --cpu COUNT        Number of vCPUs (default: ${DEFAULT_CPUS})
     -i, --image-path DIR   Override image library path (one-time)
     -s, --storage-path DIR Override VM storage path (one-time)
     --reconfig             Reconfigure saved paths
@@ -93,6 +101,7 @@ Options:
 Examples:
     $0 webserver                    Deploy VM with defaults
     $0 webserver 50G                Deploy VM with 50GB disk
+    $0 webserver -r 4096 -c 4       Deploy with 4GB RAM, 4 vCPUs
     $0 webserver -i /tmp/img        Use custom image path (one-time)
     $0 --reconfig                   Reconfigure saved paths
 
@@ -113,6 +122,8 @@ load_config() {
         STORAGE_PATH="$DEFAULT_STORAGE_PATH"
     fi
     VM_SIZE="${VM_SIZE:-$DEFAULT_VM_SIZE}"
+    VM_RAM="${VM_RAM:-$DEFAULT_RAM}"
+    VM_CPUS="${VM_CPUS:-$DEFAULT_CPUS}"
 }
 
 save_config() {
@@ -126,6 +137,8 @@ save_config() {
 IMAGE_PATH=$IMAGE_PATH
 STORAGE_PATH=$STORAGE_PATH
 DEFAULT_VM_SIZE=$DEFAULT_VM_SIZE
+DEFAULT_RAM=$DEFAULT_RAM
+DEFAULT_CPUS=$DEFAULT_CPUS
 DEFAULT_PASSWORD=$DEFAULT_PASS
 EOF
     chmod 600 "$CONFIG_FILE"
@@ -375,6 +388,16 @@ while [[ $# -gt 0 ]]; do
             fi
             exit 0
             ;;
+        -r|--ram)
+            VM_RAM="$2"
+            OVERRIDE_RAM="yes"
+            shift 2
+            ;;
+        -c|--cpu)
+            VM_CPUS="$2"
+            OVERRIDE_CPUS="yes"
+            shift 2
+            ;;
         -i|--image-path)
             IMAGE_PATH="${2/#\~/$HOME}"
             OVERRIDE_IMAGE_PATH="yes"
@@ -602,6 +625,25 @@ echo ""
 VM_PASSWORD="${INPUT_PASS:-$DEFAULT_PASS}"
 PASSWORD_HASH=$(openssl passwd -6 "$VM_PASSWORD")
 
+# --- VM RESOURCES ---
+echo ""
+echo "⚙️  VM Resources (Enter for defaults):"
+echo "   Disk:      $VM_SIZE"
+
+if [[ -z "$OVERRIDE_RAM" ]]; then
+    read -p "   RAM (MB) [${VM_RAM}]: " input_ram
+    VM_RAM="${input_ram:-$VM_RAM}"
+else
+    echo "   RAM:       $VM_RAM (flag)"
+fi
+
+if [[ -z "$OVERRIDE_CPUS" ]]; then
+    read -p "   vCPUs    [${VM_CPUS}]: " input_cpu
+    VM_CPUS="${input_cpu:-$VM_CPUS}"
+else
+    echo "   vCPUs:     $VM_CPUS (flag)"
+fi
+
 # --- CLEANUP OLD VM ---
 echo ""
 echo "🧹 Cleaning up old resources..."
@@ -675,8 +717,8 @@ echo ""
 echo "🚀 Booting VM: $VM_NAME ($OS_VARIANT)"
 $PRIV_CMD virt-install \
   --name "$VM_NAME" \
-  --memory 2048 \
-  --vcpus 2 \
+  --memory "$VM_RAM" \
+  --vcpus "$VM_CPUS" \
   --disk path="$OVERLAY_IMG",format=qcow2,bus=virtio \
   --disk path="$FINAL_ISO",device=cdrom \
   --os-variant "$OS_VARIANT" \
