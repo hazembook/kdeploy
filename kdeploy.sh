@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer v3.1
+# KVM Cloud Image Deployer v3.2
 # "The Professor's Edition" - Configurable Paths, Image Downloads, Robust Deploy
 # ==============================================================================
 
@@ -81,7 +81,7 @@ SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}"
 
 show_help() {
     cat <<EOF
-KVM Cloud Image Deployer v3.1
+KVM Cloud Image Deployer v3.2
 
 Usage: $0 <vm_name> [disk_size] [options]
 
@@ -471,13 +471,88 @@ else
     fi
 fi
 
+# --- PRE-FLIGHT CHECKS ---
+
+# 1. KVM Hardware Acceleration Check
+echo "🔍 Checking KVM support..."
+if lsmod | grep -q "^kvm"; then
+    echo "   ✅ KVM kernel module loaded"
+elif [[ -e /dev/kvm ]]; then
+    echo "   ✅ KVM device available (/dev/kvm)"
+else
+    echo "   ⚠️  KVM not detected. Virtualization may be disabled in BIOS/UEFI."
+    echo "   If nested virtualization is needed, this may cause performance issues."
+fi
+
+# 2. Libvirt Service Check
+echo "🔍 Checking libvirt service..."
+if $PRIV_CMD virsh list &>/dev/null; then
+    echo "   ✅ Libvirt daemon is running"
+else
+    echo "   ⚠️  Libvirt daemon not running or no permission"
+    echo "   Trying to start libvirtd..."
+    if $PRIV_CMD systemctl start libvirtd 2>/dev/null; then
+        echo "   ✅ Started libvirtd"
+    else
+        echo "   ⚠️  Could not start libvirtd. Try: $PRIV_CMD systemctl start libvirtd"
+    fi
+fi
+
+# 3. Default Network Check
+echo "🔍 Checking default network..."
+if $PRIV_CMD virsh net-info default &>/dev/null; then
+    NET_STATE=$($PRIV_CMD virsh net-info default 2>/dev/null | grep "Active:" | awk '{print $2}')
+    if [[ "$NET_STATE" == "Yes" ]]; then
+        echo "   ✅ Default network is active"
+    else
+        echo "   ⚠️  Default network exists but not active"
+        echo "   Attempting to start..."
+        if $PRIV_CMD virsh net-start default 2>/dev/null; then
+            echo "   ✅ Started default network"
+        else
+            echo "   ⚠️  Could not start default network"
+        fi
+    fi
+else
+    echo "   ⚠️  Default network not defined"
+    echo "   Creating default network..."
+    $PRIV_CMD virsh net-define /dev/stdin <<'EOF' 2>/dev/null && $PRIV_CMD virsh net-start default 2>/dev/null && echo "   ✅ Created and started default network" || echo "   ⚠️  Could not create default network"
+<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+EOF
+fi
+
+# 4. SSH Key Check & Generation
+echo "🔍 Checking SSH key..."
+if [[ ! -f "$SSH_PUB_KEY" ]]; then
+    echo "   ⚠️  SSH key not found at $SSH_PUB_KEY"
+    echo ""
+    read -p "   Generate SSH key now? [Y/n] " gen_key
+    gen_key="${gen_key:-Y}"
+    if [[ "${gen_key,,}" == "y" ]]; then
+        echo "   Generating SSH key..."
+        ssh-keygen -t ed25519 -f "$SSH_PRIV_KEY" -N "" -C "$USER@$(hostname)"
+        chmod 600 "$SSH_PRIV_KEY"
+        chmod 644 "$SSH_PUB_KEY"
+        echo "   ✅ SSH key generated at $SSH_PUB_KEY"
+    else
+        echo "   ❌ Cannot proceed without SSH key"
+        exit 1
+    fi
+else
+    echo "   ✅ SSH key found at $SSH_PUB_KEY"
+fi
+
 # --- DEPENDENCY CHECK ---
 check_dependencies
-
-if [[ ! -f "$SSH_PUB_KEY" ]]; then
-    echo "❌ SSH key not found at $SSH_PUB_KEY"
-    exit 1
-fi
 
 # --- SMART CONFIRMATION ---
 CONFIRM_NEEDED=false
