@@ -496,19 +496,10 @@ else
     mapfile -t AVAILABLE_IMAGES < <(find "${scan_args[@]}" 2>/dev/null | sort)
 fi
 
-echo ""
-echo "Available Images:"
-i=1
-for img in "${AVAILABLE_IMAGES[@]}"; do
-    echo "  $i) $img"
-    ((i++))
-done
-echo "  $i) 📥 Download new image"
-echo ""
 
 PS3="👉 Select Base Image (number): "
-select choice in "${AVAILABLE_IMAGES[@]}" "DOWNLOAD"; do
-    if [[ "$choice" == "DOWNLOAD" ]]; then
+select choice in "${AVAILABLE_IMAGES[@]}" "📥 Download new image"; do
+    if [[ "$choice" == "📥 Download new image" ]]; then
         echo ""
         echo "📥 Download Cloud Image"
         echo ""
@@ -549,15 +540,6 @@ select choice in "${AVAILABLE_IMAGES[@]}" "DOWNLOAD"; do
             echo "❌ No images found after download"
             exit 1
         fi
-        
-        echo ""
-        echo "Available Images:"
-        i=1
-        for img in "${AVAILABLE_IMAGES[@]}"; do
-            echo "  $i) $img"
-            ((i++))
-        done
-        echo ""
         
         PS3="👉 Select Base Image (number): "
         select img in "${AVAILABLE_IMAGES[@]}"; do
