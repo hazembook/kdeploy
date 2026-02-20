@@ -185,7 +185,49 @@ Create isolated dev environments in seconds:
 | **kdeploy** (interactive) | ~30 sec | **No** |
 | **kdeploy** (`-y` flag) | **~14 sec** | **No** |
 
-## License
+## Troubleshooting
+
+### Timeout Waiting for IP
+
+If deployment times out while waiting for DHCP/IP:
+- Connect to console: `virsh console <vm-name>` (login: cloud-user/rocky/ubuntu/debian)
+- Check network: `virsh net-dhcp-leases default`
+- For slow DHCP (wireless/bridged), increase timeout in script if needed
+
+### Permission Denied
+
+If you get permission errors:
+```bash
+sudo usermod -aG libvirt $USER
+# Log out and back in
+```
+
+### KVM Not Available
+
+Ensure virtualization is enabled in BIOS/UEFI, then load module:
+```bash
+sudo modprobe kvm
+sudo modprobe kvm_intel  # for Intel CPUs
+sudo modprobe kvm_amd    # for AMD CPUs
+```
+
+## Hardware & Performance
+
+### Test Hardware
+- **Machine**: Lenovo ideapad 320-15IKB Touch
+- **CPU**: Intel Core i7-8550U (4 cores, 8 threads) @ 4.00 GHz
+- **RAM**: 20 GB DDR4
+- **Storage**: 477GB SSD (512MB boot + 128GB root + 348GB home)
+
+### Real-World Times
+
+| Mode | Time to First Boot | Notes |
+|------|-------------------|-------|
+| Interactive | 18-30 sec | With prompts |
+| Non-interactive (`-y`) | 14-18 sec | Fully automated |
+| GUI (Virt-Manager) | 15-30 min | Manual install |
+
+Times measured on NVMe storage with Rocky Linux 9 cloud image.
 
 This project is licensed under the **Waqf Public License 2.0**.
 

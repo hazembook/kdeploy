@@ -1030,7 +1030,16 @@ MAC=$($PRIV_CMD virsh dumpxml "$VM_NAME" | grep "mac address" | head -1 | cut -d
 
 while [ -z "$IP" ]; do
     if [ $count -gt 45 ]; then
-        echo -e "\n⚠️  Timed out. Check console: virsh console $VM_NAME"
+        echo -e "\n⚠️  Timed out waiting for DHCP/IP. Try these options:"
+        echo ""
+        echo "  1. Check if VM booted - virsh console $VM_NAME"
+        echo "     (Press Enter, login: cloud-user / rocky / ubuntu / debian)"
+        echo ""
+        echo "  2. Force shutdown and retry:"
+        echo "     virsh destroy $VM_NAME; virsh undefine $VM_NAME --remove-all-storage"
+        echo "     ./kdeploy.sh $VM_NAME"
+        echo ""
+        echo "  3. If using wireless/bridged network, DHCP may be slower"
         exit 1
     fi
     
