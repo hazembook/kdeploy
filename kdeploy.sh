@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer v3.0
+# KVM Cloud Image Deployer v3.1
 # "The Professor's Edition" - Configurable Paths, Image Downloads, Robust Deploy
 # ==============================================================================
 
@@ -15,6 +15,7 @@ DEFAULT_PASS="linux"
 
 # --- IMAGE CATALOG FOR DOWNLOADS ---
 declare -A IMAGE_URLS=(
+    ["rocky10"]="https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
     ["rocky9"]="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
     ["rocky8"]="https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2"
     ["ubuntu2404"]="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
@@ -26,6 +27,7 @@ declare -A IMAGE_URLS=(
 )
 
 declare -A IMAGE_NAMES=(
+    ["rocky10"]="Rocky Linux 10 (latest)"
     ["rocky9"]="Rocky Linux 9 (latest)"
     ["rocky8"]="Rocky Linux 8 (latest)"
     ["ubuntu2404"]="Ubuntu 24.04 LTS (Noble)"
@@ -36,7 +38,18 @@ declare -A IMAGE_NAMES=(
     ["fedora41"]="Fedora 41"
 )
 
-declare -a IMAGE_KEYS=("rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13" "fedora41")
+declare -a IMAGE_KEYS=("rocky10" "rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13" "fedora41")
+
+# --- PACKAGE CATALOG ---
+declare -A DISTRO_PACKAGES=(
+    ["arch"]="libvirt virt-install qemu-img cloud-utils openssl wget curl"
+    ["debian"]="libvirt-daemon-system virtinst qemu-utils cloud-image-utils openssl wget curl"
+    ["ubuntu"]="libvirt-daemon-system virtinst qemu-utils cloud-image-utils openssl wget curl"
+    ["fedora"]="libvirt virt-install qemu-img cloud-utils openssl wget curl"
+    ["rocky"]="libvirt virt-install qemu-img cloud-utils openssl wget curl"
+    ["almalinux"]="libvirt virt-install qemu-img cloud-utils openssl wget curl"
+    ["opensuse"]="libvirt virt-install qemu-tools cloud-utils openssl wget curl"
+)
 
 # --- SSH CONSTANTS ---
 SSH_DIR="$HOME/.ssh"
@@ -48,7 +61,8 @@ IMAGE_PATH=""
 STORAGE_PATH=""
 VM_NAME=""
 VM_SIZE=""
-SKIP_CONFIRM=false
+OVERRIDE_IMAGE_PATH=""
+OVERRIDE_STORAGE_PATH=""
 
 # ---------------------
 # Handle if script is run via sudo/doas
@@ -61,7 +75,7 @@ SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}"
 
 show_help() {
     cat <<EOF
-KVM Cloud Image Deployer v3.0
+KVM Cloud Image Deployer v3.1
 
 Usage: $0 <vm_name> [disk_size] [options]
 
@@ -70,7 +84,6 @@ Arguments:
     disk_size       Size of VM disk (default: ${DEFAULT_VM_SIZE})
 
 Options:
-    -y, --yes              Skip confirmation prompts
     -i, --image-path DIR   Override image library path (one-time)
     -s, --storage-path DIR Override VM storage path (one-time)
     --reconfig             Reconfigure saved paths
@@ -80,7 +93,6 @@ Options:
 Examples:
     $0 webserver                    Deploy VM with defaults
     $0 webserver 50G                Deploy VM with 50GB disk
-    $0 webserver -y                 Deploy without confirmation
     $0 webserver -i /tmp/img        Use custom image path (one-time)
     $0 --reconfig                   Reconfigure saved paths
 
@@ -172,6 +184,140 @@ configure_paths() {
     save_config
 }
 
+detect_distro() {
+    if [[ -f /etc/arch-release ]]; then
+        echo "arch"
+    elif [[ -f /etc/debian_version ]]; then
+        if grep -qi ubuntu /etc/os-release 2>/dev/null; then
+            echo "ubuntu"
+        else
+            echo "debian"
+        fi
+    elif [[ -f /etc/fedora-release ]]; then
+        echo "fedora"
+    elif [[ -f /etc/rocky-release ]]; then
+        echo "rocky"
+    elif [[ -f /etc/almalinux-release ]]; then
+        echo "almalinux"
+    elif [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        case "$ID" in
+            arch|manjaro|endeavouros|cachyos) echo "arch" ;;
+            debian|ubuntu|linuxmint|pop) echo "debian" ;;
+            fedora|rhel|centos) echo "fedora" ;;
+            rocky|almalinux) echo "rocky" ;;
+            opensuse*) echo "opensuse" ;;
+            *) echo "$ID" ;;
+        esac
+    else
+        echo "unknown"
+    fi
+}
+
+get_package_manager() {
+    if command -v pacman &>/dev/null; then
+        echo "pacman -S"
+    elif command -v apt &>/dev/null; then
+        echo "apt install"
+    elif command -v dnf &>/dev/null; then
+        echo "dnf install"
+    elif command -v yum &>/dev/null; then
+        echo "yum install"
+    elif command -v zypper &>/dev/null; then
+        echo "zypper install"
+    else
+        echo "unknown"
+    fi
+}
+
+check_dependencies() {
+    local missing=()
+    local critical_cmds=("virsh" "virt-install" "cloud-localds" "qemu-img" "openssl")
+    
+    for cmd in "${critical_cmds[@]}"; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+    
+    # wget or curl (need at least one)
+    if ! command -v wget &>/dev/null && ! command -v curl &>/dev/null; then
+        missing+=("wget/curl")
+    fi
+    
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        return 0
+    fi
+    
+    echo ""
+    echo "❌ Missing dependencies: ${missing[*]}"
+    echo ""
+    
+    local distro
+    distro=$(detect_distro)
+    
+    local pkg_manager
+    pkg_manager=$(get_package_manager)
+    
+    local packages="${DISTRO_PACKAGES[$distro]}"
+    
+    if [[ -z "$packages" ]]; then
+        echo "Could not detect required packages for your distribution ($distro)."
+        echo "Please install the missing commands manually."
+        exit 1
+    fi
+
+    echo "Detected system: $distro"
+    echo "Package manager: $pkg_manager"
+    echo "Required packages: $packages"
+    echo ""
+    
+    read -p "Install now? [Y/n] " install_choice
+    install_choice="${install_choice:-Y}"
+    
+    if [[ "${install_choice,,}" == "y" ]]; then
+        echo ""
+        echo "Installing dependencies..."
+        
+        # Determine install command structure
+        case "$pkg_manager" in
+            "pacman -S")
+                # Arch/CachyOS specific: sync before install, handle meta-packages
+                $PRIV_CMD pacman -S --needed $packages
+                ;;
+            "apt install")
+                $PRIV_CMD apt update
+                $PRIV_CMD apt install -y $packages
+                ;;
+            "dnf install"|"yum install")
+                $PRIV_CMD $pkg_manager -y $packages
+                ;;
+            "zypper install")
+                $PRIV_CMD zypper install -y $packages
+                ;;
+            *)
+                echo "❌ Unknown package manager. Install manually."
+                exit 1
+                ;;
+        esac
+        
+        echo ""
+        echo "✅ Dependencies installed."
+        echo ""
+        
+        # Re-check after installation
+        for cmd in "${critical_cmds[@]}"; do
+            if ! command -v "$cmd" &>/dev/null; then
+                echo "❌ $cmd still not found. You may need to log out and back in."
+                exit 1
+            fi
+        done
+    else
+        echo "Aborted. Install dependencies and try again."
+        exit 1
+    fi
+}
+
 download_image() {
     local url="$1"
     local filename
@@ -229,16 +375,14 @@ while [[ $# -gt 0 ]]; do
             fi
             exit 0
             ;;
-        -y|--yes)
-            SKIP_CONFIRM=true
-            shift
-            ;;
         -i|--image-path)
             IMAGE_PATH="${2/#\~/$HOME}"
+            OVERRIDE_IMAGE_PATH="yes"
             shift 2
             ;;
         -s|--storage-path)
             STORAGE_PATH="${2/#\~/$HOME}"
+            OVERRIDE_STORAGE_PATH="yes"
             shift 2
             ;;
         -h|--help)
@@ -304,19 +448,34 @@ else
     fi
 fi
 
+# --- DEPENDENCY CHECK ---
+check_dependencies
+
 if [[ ! -f "$SSH_PUB_KEY" ]]; then
     echo "❌ SSH key not found at $SSH_PUB_KEY"
     exit 1
 fi
 
-# --- PATH CONFIRMATION ---
-echo ""
-echo "📂 Paths:"
-echo "   Images:  $IMAGE_PATH"
-echo "   Storage: $STORAGE_PATH"
-echo ""
+# --- SMART CONFIRMATION ---
+CONFIRM_NEEDED=false
 
-if [[ "$SKIP_CONFIRM" != true ]]; then
+if [[ -n "$OVERRIDE_IMAGE_PATH" || -n "$OVERRIDE_STORAGE_PATH" ]]; then
+    CONFIRM_NEEDED=true
+    echo ""
+    echo "⚠️  Using override paths:"
+    [[ -n "$OVERRIDE_IMAGE_PATH" ]] && echo "   Images:  $IMAGE_PATH (override)"
+    [[ -n "$OVERRIDE_STORAGE_PATH" ]] && echo "   Storage: $STORAGE_PATH (override)"
+fi
+
+# Check if VM already exists (will be destroyed)
+if $PRIV_CMD virsh dominfo "$VM_NAME" &>/dev/null; then
+    CONFIRM_NEEDED=true
+    echo ""
+    echo "⚠️  VM '$VM_NAME' already exists - will be DESTROYED and recreated!"
+fi
+
+if [[ "$CONFIRM_NEEDED" == true ]]; then
+    echo ""
     read -p "   Continue? [Y/n] " confirm
     if [[ "${confirm,,}" == "n" ]]; then
         echo "Aborted."
