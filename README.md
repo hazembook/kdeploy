@@ -161,14 +161,6 @@ Quickly spin up VMs to practice:
 - LVM and storage
 - Container orchestration
 
-### RHEL/CentOS Certification Prep
-
-Practice on:
-- Rocky Linux 9/10
-- Debian 12/13
-- Ubuntu 24
-- or download your prefered distro cloud image
-
 ### Development Environments
 
 Create isolated dev environments in seconds:
