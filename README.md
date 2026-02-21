@@ -219,7 +219,6 @@ sudo modprobe kvm_amd    # for AMD CPUs
 | Non-interactive (`-y`) | 14-18 sec | Fully automated |
 | GUI (Virt-Manager) | 15-30 min | Manual install |
 
-Times measured on NVMe storage with Rocky Linux 9 cloud image.
 
 This project is licensed under the **Waqf Public License 2.0**.
 
