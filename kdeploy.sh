@@ -73,7 +73,15 @@ OVERRIDE_CPUS=""
 # ---------------------
 # Handle if script is run via sudo/doas
 VM_USER="${SUDO_USER:-${DOAS_USER:-$USER}}"
-SSH_PUB_KEY="$HOME/.ssh/id_rsa.pub"
+
+# Smart SSH key detection (prefer ed25519, fallback to rsa, default to ed25519)
+if [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then
+    SSH_PUB_KEY="$HOME/.ssh/id_ed25519.pub"
+elif [[ -f "$HOME/.ssh/id_rsa.pub" ]]; then
+    SSH_PUB_KEY="$HOME/.ssh/id_rsa.pub"
+else
+    SSH_PUB_KEY="$HOME/.ssh/id_ed25519.pub"
+fi
 SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}"
 # ---------------------
 
