@@ -27,19 +27,15 @@ The combination of these three technologies completely changed how I work with V
 
 ### How It Works
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Cloud Image    │────▶│  Overlay (qcow2) │────▶│   VM Created    │
-│  (Base, ~1GB)   │     │  (Copy-on-write) │     │   in ~1 minute  │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                │
-                                ▼
-                        ┌──────────────────┐
-                        │   Cloud-Init     │
-                        │  (user, SSH,     │
-                        │   packages)      │
-                        └──────────────────┘
-```
+kdeploy creates VMs in three simple steps:
+
+1. **Download a Cloud Image**: Fetch a pre-configured minimal OS image in qcow2 format (~1GB) from upstream providers like Rocky Linux, Ubuntu, Debian, or Fedora.
+
+2. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
+
+3. **Cloud-Init Configuration**: On first boot, cloud-init automatically injects your SSH key, creates your user account, and installs any packages you specify.
+
+**Total time**: ~30 seconds from start to SSH access.
 
 This is essentially how AWS, DigitalOcean, and other cloud providers create VMs instantly. Now you can do the same locally.
 
