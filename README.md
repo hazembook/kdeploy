@@ -87,6 +87,22 @@ chmod +x kdeploy.sh
 ./kdeploy.sh
 ```
 
+### Global Installation
+
+To run `kdeploy` from anywhere without `./` prefix:
+
+```bash
+mkdir -p ~/.local/bin
+cp kdeploy.sh ~/.local/bin/kdeploy
+chmod +x ~/.local/bin/kdeploy
+
+# Add to PATH if needed (add to ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
+
+# Now you can run from anywhere
+kdeploy myvm
+```
+
 ## Usage
 
 ```bash
@@ -269,6 +285,7 @@ function vxx
 end 
 ```
 
+---
 
 This project is licensed under the **Waqf Public License 2.0**.
 
