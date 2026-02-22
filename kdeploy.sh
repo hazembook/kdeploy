@@ -15,17 +15,28 @@ DEFAULT_RAM="2048"
 DEFAULT_CPUS="2"
 DEFAULT_PASS="linux"
 
+# --- ARCHITECTURE DETECTION ---
+ARCH=$(uname -m)
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+    ROCKY_ARCH="aarch64"
+    UBUNTU_ARCH="arm64"
+    DEBIAN_ARCH="arm64"
+else
+    ROCKY_ARCH="x86_64"
+    UBUNTU_ARCH="amd64"
+    DEBIAN_ARCH="amd64"
+fi
+
 # --- IMAGE CATALOG FOR DOWNLOADS ---
 declare -A IMAGE_URLS=(
-    ["rocky10"]="https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
-    ["rocky9"]="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
-    ["rocky8"]="https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2"
-    ["ubuntu2404"]="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
-    ["ubuntu2204"]="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-    ["ubuntu2004"]="https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-    ["debian12"]="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
-    ["debian13"]="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2"
-    ["fedora41"]="https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2"
+    ["rocky10"]="https://dl.rockylinux.org/pub/rocky/10/images/${ROCKY_ARCH}/Rocky-10-GenericCloud-Base.latest.${ROCKY_ARCH}.qcow2"
+    ["rocky9"]="https://dl.rockylinux.org/pub/rocky/9/images/${ROCKY_ARCH}/Rocky-9-GenericCloud-Base.latest.${ROCKY_ARCH}.qcow2"
+    ["rocky8"]="https://dl.rockylinux.org/pub/rocky/8/images/${ROCKY_ARCH}/Rocky-8-GenericCloud-Base.latest.${ROCKY_ARCH}.qcow2"
+    ["ubuntu2404"]="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-${UBUNTU_ARCH}.img"
+    ["ubuntu2204"]="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-${UBUNTU_ARCH}.img"
+    ["ubuntu2004"]="https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-${UBUNTU_ARCH}.img"
+    ["debian12"]="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-${DEBIAN_ARCH}.qcow2"
+    ["debian13"]="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-${DEBIAN_ARCH}.qcow2"
 )
 
 declare -A IMAGE_NAMES=(
@@ -37,10 +48,9 @@ declare -A IMAGE_NAMES=(
     ["ubuntu2004"]="Ubuntu 20.04 LTS (Focal)"
     ["debian12"]="Debian 12 (Bookworm)"
     ["debian13"]="Debian 13 (Trixie)"
-    ["fedora41"]="Fedora 41"
 )
 
-declare -a IMAGE_KEYS=("rocky10" "rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13" "fedora41")
+declare -a IMAGE_KEYS=("rocky10" "rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13")
 
 # --- PACKAGE CATALOG ---
 declare -A DISTRO_PACKAGES=(
