@@ -219,6 +219,56 @@ sudo modprobe kvm_amd    # for AMD CPUs
 | Non-interactive (`-y`) | 14-18 sec | Fully automated |
 | GUI (Virt-Manager) | 15-30 min | Manual install |
 
+## Aliases Recommendation
+
+Here are the aliases that I use to manage VMs efficiently (Left-Handed V-Set).
+
+### Bash / Zsh
+
+Add these to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+## Virsh (Left-Handed V-Set)
+alias vv='virsh list --all'
+alias vs='virsh start'
+alias vq='virsh shutdown'
+alias vc='virsh console'
+alias vd='virsh destroy'
+alias vr='virsh reboot'
+alias ve='virsh edit'
+
+function va() {
+    virsh domifaddr "$1" | awk '/ipv4/ {print $4}' | cut -d/ -f1
+}
+
+function vxx() {
+    echo "Destroying and Undefining: $1"
+    virsh destroy "$1" 2>/dev/null
+    virsh undefine "$1" --remove-all-storage
+}
+```
+
+### Fish
+
+Add these to your `~/.config/fish/config.fish`:
+
+```fish
+## Virsh (Left-Handed V-Set)
+alias vv 'virsh list --all'
+alias vs 'virsh start'
+alias vq 'virsh shutdown'
+alias vc 'virsh console'
+alias vd 'virsh destroy'
+alias vr 'virsh reboot'
+alias ve 'virsh edit'
+function va; virsh domifaddr $argv[1] | awk '/ipv4/ {print $4}' | cut -d/ -f1; end
+function vxx 
+    echo "Destroying and Undefining: $argv[1]"
+    virsh destroy $argv[1] 2>/dev/null
+    virsh undefine $argv[1] --remove-all-storage
+end 
+```
+
 
 This project is licensed under the **Waqf Public License 2.0**.
 
