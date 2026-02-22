@@ -1059,7 +1059,7 @@ while [ -z "$IP" ]; do
         | head -n1)
     
     if [ -z "$IP" ]; then
-        IP=$($PRIV_CMD virsh net-dhcp-leases default \
+        IP=$($PRIV_CMD virsh net-dhcp-leases default 2>/dev/null \
             | grep "$MAC" \
             | awk '{print $5}' \
             | cut -d/ -f1 \
