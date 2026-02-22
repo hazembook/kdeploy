@@ -927,7 +927,7 @@ if [[ "$SKIP_CONFIRM" == true ]]; then
 else
     echo ""
     echo "📦 Package Selection"
-    echo "   [1] None (default - fastest, cloud images usually have qemu-guest-agent)"
+    echo "   [1] None (default - fastest, relies on DHCP for IP discovery)"
     echo "   [2] Custom packages"
     echo ""
     read -p "   Choice [1]: " pkg_choice
