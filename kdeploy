@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# KVM Cloud Image Deployer v3.3
+# KVM Cloud Image Deployer v3.4
 # "The Professor's Edition" - Configurable Paths, Image Downloads, Robust Deploy
 # ==============================================================================
 
@@ -99,7 +99,7 @@ SSH_PRIV_KEY="${SSH_PUB_KEY%.pub}"
 
 show_help() {
     cat <<EOF
-KVM Cloud Image Deployer v3.3
+KVM Cloud Image Deployer v3.4
 
 Usage: $0 <vm_name> [disk_size] [options]
 
