@@ -31,9 +31,9 @@ kdeploy creates VMs in three simple steps:
 
 1. **Download a Cloud Image**: Fetch a pre-configured minimal OS image in qcow2 format (~1GB) from upstream providers like Rocky Linux, Ubuntu, Debian, or Fedora.
 
-2. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
+1. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
 
-3. **Cloud-Init Configuration**: On first boot, cloud-init automatically injects your SSH key, creates your user account, and installs any packages you specify.
+1. **Cloud-Init Configuration**: On first boot, cloud-init automatically injects your SSH key, creates your user account, and installs any packages you specify.
 
 **Total time**: ~30 seconds from start to SSH access.
 
@@ -77,10 +77,10 @@ git clone https://github.com/hazembook/kdeploy.git
 cd kdeploy
 
 # Make executable
-chmod +x kdeploy.sh
+chmod +x kdeploy
 
 # Run - first run will guide you through setup
-./kdeploy.sh
+./kdeploy
 ```
 
 ### Global Installation
@@ -89,7 +89,7 @@ To run `kdeploy` from anywhere without `./` prefix:
 
 ```bash
 mkdir -p ~/.local/bin
-cp kdeploy.sh ~/.local/bin/kdeploy
+cp kdeploy ~/.local/bin/kdeploy
 chmod +x ~/.local/bin/kdeploy
 
 # Add to PATH if needed (add to ~/.bashrc or ~/.zshrc)
@@ -103,28 +103,28 @@ kdeploy myvm
 
 ```bash
 # Basic deployment (follow interactive prompts)
-./kdeploy.sh myvm
+./kdeploy myvm
 
 # Fast deployment (skip all confirmations, ~14 seconds!)
-./kdeploy.sh myvm -y
+./kdeploy myvm -y
 
 # Specify disk size
-./kdeploy.sh myvm 50G
+./kdeploy myvm 50G
 
 # Override resources
-./kdeploy.sh myvm -r 4096 -c 4
+./kdeploy myvm -r 4096 -c 4
 
 # Use custom paths (one-time override)
-./kdeploy.sh myvm -i /path/to/images -s /path/to/storage
+./kdeploy myvm -i /path/to/images -s /path/to/storage
 
 # Fully non-interactive (custom paths + skip confirmations)
-./kdeploy.sh myvm -i /path/to/images -s /path/to/storage -y
+./kdeploy myvm -i /path/to/images -s /path/to/storage -y
 
 # Reconfigure default paths
-./kdeploy.sh --reconfig
+./kdeploy --reconfig
 
 # Show current configuration
-./kdeploy.sh --show-config
+./kdeploy --show-config
 ```
 
 ## First Run Experience
