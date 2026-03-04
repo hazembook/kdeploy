@@ -488,6 +488,20 @@ if [[ ! -f "$CONFIG_FILE" ]] || [[ "$RECONFIG" == true ]]; then
     configure_paths
 fi
 
+# --- PRIVILEGE DETECTION ---
+if id -nG "$USER" | grep -qw "libvirt"; then
+    PRIV_CMD=""
+else
+    if command -v doas &> /dev/null; then
+        PRIV_CMD="doas"
+    elif command -v sudo &> /dev/null; then
+        PRIV_CMD="sudo"
+    else
+        echo "❌ Critical: No privilege escalation tool found."
+        exit 1
+    fi
+fi
+
 # --- VALIDATION ---
 if [[ -z "$VM_NAME" ]]; then
     echo "Usage: $0 <vm_name> [disk_size] [options]"
@@ -572,19 +586,6 @@ check_permissions() {
 }
 
 check_permissions
-
-if id -nG "$USER" | grep -qw "libvirt"; then
-    PRIV_CMD=""
-else
-    if command -v doas &> /dev/null; then
-        PRIV_CMD="doas"
-    elif command -v sudo &> /dev/null; then
-        PRIV_CMD="sudo"
-    else
-        echo "❌ Critical: No privilege escalation tool found."
-        exit 1
-    fi
-fi
 
 # --- PRE-FLIGHT CHECKS ---
 
