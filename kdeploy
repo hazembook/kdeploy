@@ -1009,7 +1009,10 @@ local-hostname: ${VM_NAME}
 EOF
 
 # --- SEED ISO & OVERLAY ---
-cloud-localds -v "$SEED_ISO" "$CLOUD_INIT_DIR/user-data" "$CLOUD_INIT_DIR/meta-data" > /dev/null
+if ! cloud-localds "$SEED_ISO" "$CLOUD_INIT_DIR/user-data" "$CLOUD_INIT_DIR/meta-data" 2>&1 > /dev/null; then
+    echo "❌ Failed to generate cloud-init ISO"
+    exit 1
+fi
 FINAL_ISO="$STORAGE_PATH/${VM_NAME}-seed.iso"
 
 if needs_privilege "$STORAGE_PATH"; then
