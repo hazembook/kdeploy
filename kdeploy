@@ -531,6 +531,13 @@ if [[ $STORAGE_DIR -lt $REQUIRED_SPACE ]]; then
     echo "   ⚠️  Low disk space in $STORAGE_PATH"
     echo "   Available: $((STORAGE_DIR / 1024 / 1024))GB"
     echo "   Recommended: 20GB+ for comfortable use"
+    if [[ "$SKIP_CONFIRM" != true ]]; then
+        read -p "   Continue anyway? [y/N] " continue_low_space
+        if [[ "${continue_low_space,,}" != "y" ]]; then
+            echo "Aborted."
+            exit 1
+        fi
+    fi
 else
     echo "   ✅ Sufficient disk space: $((STORAGE_DIR / 1024 / 1024))GB available"
 fi
