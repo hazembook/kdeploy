@@ -11,7 +11,7 @@ A fast, interactive CLI tool for deploying KVM virtual machines from cloud image
 - **Speed**: Deploy a VM in under 2 minutes
 - **No GUI Needed**: Fully automated, command-line driven
 - **Cloud-Init Integration**: Automatic SSH key injection, user setup, and package installation
-- **Multiple Distros**: Support for Rocky Linux, Ubuntu, Debian, Fedora, and more
+- **Multiple Distros**: Support for Rocky Linux (10, 9, 8), Ubuntu (24.04, 22.04, 20.04), Debian (13, 12, 11), and more
 - **Interactive**: Guided setup with sensible defaults
 - **Open Source**: Released under the Waqf Public License
 
@@ -52,6 +52,7 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 - **Dependency Management**: Auto-detects and offers to install missing packages
 - **Pre-flight Checks**: KVM, libvirt, network, storage pool, disk space
 - **Permission Handling**: Auto-detects and offers to add user to libvirt group
+- **UTC Timezone**: Enforces UTC timezone for cloud-native standardization
 
 ## Requirements
 
@@ -119,6 +120,12 @@ kdeploy myvm
 
 # Fully non-interactive (custom paths + skip confirmations)
 ./kdeploy myvm -i /path/to/images -s /path/to/storage -y
+
+# Use custom virtual network
+./kdeploy myvm -n my-custom-network
+
+# Destroy a VM (quick teardown)
+./kdeploy destroy myvm
 
 # Reconfigure default paths
 ./kdeploy --reconfig

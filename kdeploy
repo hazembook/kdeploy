@@ -37,6 +37,7 @@ declare -A IMAGE_URLS=(
     ["ubuntu2004"]="https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-${UBUNTU_ARCH}.img"
     ["debian12"]="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-${DEBIAN_ARCH}.qcow2"
     ["debian13"]="https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-${DEBIAN_ARCH}.qcow2"
+    ["debian11"]="https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-${DEBIAN_ARCH}.qcow2"
 )
 
 declare -A IMAGE_NAMES=(
@@ -48,9 +49,10 @@ declare -A IMAGE_NAMES=(
     ["ubuntu2004"]="Ubuntu 20.04 LTS (Focal)"
     ["debian12"]="Debian 12 (Bookworm)"
     ["debian13"]="Debian 13 (Trixie)"
+    ["debian11"]="Debian 11 (Bullseye)"
 )
 
-declare -a IMAGE_KEYS=("rocky10" "rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13")
+declare -a IMAGE_KEYS=("rocky10" "rocky9" "rocky8" "ubuntu2404" "ubuntu2204" "ubuntu2004" "debian12" "debian13" "debian11")
 
 # --- PACKAGE CATALOG ---
 declare -A DISTRO_PACKAGES=(
@@ -918,6 +920,7 @@ case "$LOWER_NAME" in
     *focal*|*20*|*2004*) OS_VARIANT="ubuntu20.04" ;;
     *debian*12*) OS_VARIANT="debian12" ;;
     *debian*13*) OS_VARIANT="debian13" ;;
+    *debian*11*) OS_VARIANT="debian11" ;;
     *)           OS_VARIANT="generic" ;;
 esac
 
