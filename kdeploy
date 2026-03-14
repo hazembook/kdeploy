@@ -1030,6 +1030,7 @@ ssh_pwauth: false
 preserve_hostname: false
 timezone: UTC
 hostname: ${VM_NAME}
+timezone: UTC
 "
 
 # Add packages if any
