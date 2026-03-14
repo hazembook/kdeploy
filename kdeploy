@@ -413,6 +413,47 @@ RECONFIG=false
 SKIP_CONFIRM=false
 POSITIONAL_ARGS=()
 
+# Handle destroy command early (before normal argument parsing)
+if [[ "$1" == "destroy" ]]; then
+    DESTROY_VM="$2"
+    if [[ -z "$DESTROY_VM" ]]; then
+        echo "Usage: $0 destroy <vm_name>"
+        exit 1
+    fi
+    
+    load_config
+    
+    # Determine privilege command
+    if id -nG "$USER" | grep -qw "libvirt"; then
+        PRIV_CMD=""
+    else
+        if command -v doas &> /dev/null; then
+            PRIV_CMD="doas"
+        elif command -v sudo &> /dev/null; then
+            PRIV_CMD="sudo"
+        else
+            echo "❌ No privilege escalation tool found."
+            exit 1
+        fi
+    fi
+    
+    echo "🔥 Destroying VM: $DESTROY_VM"
+    $PRIV_CMD virsh destroy "$DESTROY_VM" 2>/dev/null || true
+    $PRIV_CMD virsh undefine "$DESTROY_VM" --remove-all-storage 2>/dev/null || true
+    
+    # Remove qcow2 and seed.iso files
+    if [[ -n "$STORAGE_PATH" ]]; then
+        $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null || true
+        $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null || true
+    fi
+    
+    # Remove SSH config include
+    rm -f "$SSH_INCLUDE_DIR/${DESTROY_VM}.conf" 2>/dev/null || true
+    
+    echo "✅ VM '$DESTROY_VM' has been destroyed and cleaned up."
+    exit 0
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -y|--yes)
