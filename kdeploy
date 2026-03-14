@@ -471,6 +471,40 @@ done
 
 set -- "${POSITIONAL_ARGS[@]}"
 
+if [[ "${POSITIONAL_ARGS[0]}" == "destroy" ]]; then
+    DESTROY_VM="${POSITIONAL_ARGS[1]}"
+    if [[ -z "$DESTROY_VM" ]]; then
+        echo "Usage: $0 destroy <vm_name>"
+        exit 1
+    fi
+    
+    load_config
+    
+    if id -nG "$USER" | grep -qw "libvirt"; then
+        PRIV_CMD=""
+    else
+        if command -v doas &> /dev/null; then
+            PRIV_CMD="doas"
+        elif command -v sudo &> /dev/null; then
+            PRIV_CMD="sudo"
+        else
+            echo "❌ Critical: No privilege escalation tool found."
+            exit 1
+        fi
+    fi
+    
+    echo "🔥 Destroying VM: $DESTROY_VM"
+    $PRIV_CMD virsh destroy "$DESTROY_VM" 2>/dev/null || true
+    $PRIV_CMD virsh undefine "$DESTROY_VM" --remove-all-storage 2>/dev/null || true
+    
+    rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null
+    rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null
+    rm -f "$SSH_INCLUDE_DIR/${DESTROY_VM}.conf" 2>/dev/null
+    
+    echo "✅ VM '$DESTROY_VM' destroyed successfully"
+    exit 0
+fi
+
 VM_NAME="${POSITIONAL_ARGS[0]:-}"
 VM_SIZE="${POSITIONAL_ARGS[1]:-$DEFAULT_VM_SIZE}"
 
