@@ -873,9 +873,9 @@ case "$LOWER_NAME" in
     *rocky*10*)   OS_VARIANT="rocky10" ;;
     *rocky*9*)   OS_VARIANT="rocky9" ;;
     *rocky*8*)   OS_VARIANT="rocky8" ;;
-    *noble*|*24*|*2404*) OS_VARIANT="ubuntunoble" ;;
-    *jammy*|*22*|*2204*) OS_VARIANT="ubuntujammy" ;;
-    *focal*|*20*|*2004*) OS_VARIANT="ubuntufocal" ;;
+    *noble*|*24*|*2404*) OS_VARIANT="ubuntu24.04" ;;
+    *jammy*|*22*|*2204*) OS_VARIANT="ubuntu22.04" ;;
+    *focal*|*20*|*2004*) OS_VARIANT="ubuntu20.04" ;;
     *debian*12*) OS_VARIANT="debian12" ;;
     *debian*13*) OS_VARIANT="debian13" ;;
     *)           OS_VARIANT="generic" ;;
