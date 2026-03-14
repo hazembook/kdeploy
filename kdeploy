@@ -985,6 +985,7 @@ users:
       - $(cat "$SSH_PUB_KEY")
 ssh_pwauth: false
 preserve_hostname: false
+timezone: UTC
 hostname: ${VM_NAME}
 "
 
