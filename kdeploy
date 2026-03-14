@@ -963,6 +963,7 @@ if needs_privilege "$STORAGE_PATH"; then
 else
     rm -f "$OVERLAY_IMG" "$STORAGE_PATH/${VM_NAME}-seed.iso"
 fi
+rm -f "$SSH_INCLUDE_DIR/${VM_NAME}.conf" 2>/dev/null
 
 # --- CLOUD-INIT ---
 echo "🔧 Generating cloud-init..."
