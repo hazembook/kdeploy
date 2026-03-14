@@ -1036,7 +1036,7 @@ fi
 # --- DEPLOY ---
 echo ""
 echo "🚀 Booting VM: $VM_NAME ($OS_VARIANT)"
-$PRIV_CMD virt-install \
+if ! $PRIV_CMD virt-install \
   --name "$VM_NAME" \
   --memory "$VM_RAM" \
   --vcpus "$VM_CPUS" \
@@ -1047,7 +1047,11 @@ $PRIV_CMD virt-install \
   --console pty,target_type=serial \
   --network network=default \
   --import \
-  --noautoconsole
+  --noautoconsole; then
+  echo "❌ virt-install failed. VM may be in inconsistent state."
+  echo "   Run: virsh undefine $VM_NAME --remove-all-storage"
+  exit 1
+fi
 
 # --- ROBUST IP DISCOVERY ---
 echo ""
