@@ -45,7 +45,7 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 - **Interactive Setup**: Guided configuration with sensible defaults
 - **Smart Path Handling**: User-owned or system-managed storage paths
 - **Image Download**: Built-in catalog of popular cloud images
-- **Automatic OS Detection**: Detects Rocky, Ubuntu, Debian, Fedora from filename
+- **Automatic OS Detection**: Detects Rocky, Ubuntu, Debian, Alpine Linux from filename
 - **Resource Selection**: Choose RAM, vCPUs, and disk size
 - **SSH Config Management**: Automatic SSH host configuration
 - **Fast IP Discovery**: Uses DHCP leases (no qemu-guest-agent needed)
