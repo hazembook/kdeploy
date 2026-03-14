@@ -79,6 +79,7 @@ OVERRIDE_IMAGE_PATH=""
 OVERRIDE_STORAGE_PATH=""
 OVERRIDE_RAM=""
 OVERRIDE_CPUS=""
+VM_NETWORK="default"
 
 # ---------------------
 # Handle if script is run via sudo/doas
@@ -113,6 +114,7 @@ Options:
     -c, --cpu COUNT        Number of vCPUs (default: ${DEFAULT_CPUS})
     -i, --image-path DIR   Override image library path (one-time)
     -s, --storage-path DIR Override VM storage path (one-time)
+    -n, --network NAME     Virtual network to use (default: default)
     --reconfig             Reconfigure saved paths
     --show-config          Show current configuration
     -h, --help             Show this help message
@@ -435,6 +437,10 @@ while [[ $# -gt 0 ]]; do
         -c|--cpu)
             VM_CPUS="$2"
             OVERRIDE_CPUS="yes"
+            shift 2
+            ;;
+        -n|--network)
+            VM_NETWORK="$2"
             shift 2
             ;;
         -i|--image-path)
@@ -1047,7 +1053,7 @@ if ! $PRIV_CMD virt-install \
   --os-variant "$OS_VARIANT" \
   --graphics vnc,listen=127.0.0.1 \
   --console pty,target_type=serial \
-  --network network=default \
+  --network network="$VM_NETWORK" \
   --import \
   --noautoconsole; then
   echo "❌ virt-install failed. VM may be in inconsistent state."
