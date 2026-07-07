@@ -23,6 +23,12 @@ var rootCmd = &cobra.Command{
 	Long: `kdeploy automates the creation of KVM virtual machines
 using cloud-init enabled cloud images (qcow2 format).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if reconfig, _ := cmd.Flags().GetBool("reconfig"); reconfig {
+			return configInitCmd.RunE(configInitCmd, nil)
+		}
+		if showCfg, _ := cmd.Flags().GetBool("show-config"); showCfg {
+			return configShowCmd.RunE(configShowCmd, nil)
+		}
 		return cmd.Help()
 	},
 }
