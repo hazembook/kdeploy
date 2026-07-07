@@ -120,8 +120,6 @@ kdeploy deploy myvm -n "my-custom-network,mac=52:54:00:ab:cd:01"
 # Destroy a VM (clean up files + SSH config)
 kdeploy destroy myvm
 
-# Force-teardown (remove all storage, no file cleanup)
-kdeploy nuke myvm
 ```
 
 ### VM Management (built-in virsh wrappers)
@@ -135,6 +133,7 @@ kdeploy reboot myvm       # Reboot
 kdeploy console myvm      # Interactive serial console
 kdeploy edit myvm         # Edit VM XML ($EDITOR)
 kdeploy ip myvm           # Show VM IP address
+kdeploy info [vm]         # Show VM info (name, state, IP)
 ```
 
 ### Image Management
@@ -290,21 +289,55 @@ sudo modprobe kvm_amd    # for AMD CPUs
 | Non-interactive (`-y`) | 14-18 sec | Fully automated |
 | GUI (Virt-Manager) | 15-30 min | Manual install |
 
-## Built-in Virsh Replacement
+## Aliases Recommendation
 
-The Go version has all these commands **built in** — no aliases needed:
+If you prefer the original `virsh` shortcuts, or if you're using the legacy bash script, add these to your shell config.
 
-| Old alias | `kdeploy` command | What it does |
-|-----------|-------------------|--------------|
-| `vv` | `kdeploy list` | List all VMs |
-| `vs` | `kdeploy start` | Start a VM |
-| `vq` | `kdeploy shutdown` | ACPI graceful shutdown |
-| `vc` | `kdeploy console` | Serial console |
-| `vd` | `kdeploy stop` | Force power-off |
-| `vr` | `kdeploy reboot` | Reboot |
-| `ve` | `kdeploy edit` | Edit XML config |
-| `va` | `kdeploy ip` | Show VM IP |
-| `vxx` | `kdeploy nuke` | Destroy + remove all storage |
+### Bash / Zsh
+
+Add these to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+## Virsh (Left-Handed V-Set)
+alias vv='virsh list --all'
+alias vs='virsh start'
+alias vq='virsh shutdown'
+alias vc='virsh console'
+alias vd='virsh destroy'
+alias vr='virsh reboot'
+alias ve='virsh edit'
+
+function va() {
+    virsh domifaddr "$1" | awk '/ipv4/ {print $4}' | cut -d/ -f1
+}
+
+function vxx() {
+    echo "Destroying and Undefining: $1"
+    virsh destroy "$1" 2>/dev/null
+    virsh undefine "$1" --remove-all-storage
+}
+```
+
+### Fish
+
+Add these to your `~/.config/fish/config.fish`:
+
+```fish
+## Virsh (Left-Handed V-Set)
+alias vv 'virsh list --all'
+alias vs 'virsh start'
+alias vq 'virsh shutdown'
+alias vc 'virsh console'
+alias vd 'virsh destroy'
+alias vr 'virsh reboot'
+alias ve 'virsh edit'
+function va; virsh domifaddr $argv[1] | awk '/ipv4/ {print $4}' | cut -d/ -f1; end
+function vxx 
+    echo "Destroying and Undefining: $argv[1]"
+    virsh destroy $argv[1] 2>/dev/null
+    virsh undefine $argv[1] --remove-all-storage
+end 
+```
 
 ---
 
