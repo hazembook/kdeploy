@@ -188,7 +188,7 @@ make clean        # rm -rf bin/
 ## Architecture Overview
 
 - **Entry point**: `main.go` → `cmd.Execute()` (Cobra CLI)
-- **Commands**: `cmd/root.go` (flags), `cmd/deploy.go`, `cmd/destroy.go`, `cmd/download.go`, `cmd/check.go`, `cmd/config.go`, `cmd/list.go`, `cmd/start.go`, `cmd/shutdown.go`, `cmd/stop.go`, `cmd/reboot.go`, `cmd/console.go`, `cmd/edit.go`, `cmd/ip.go`, `cmd/nuke.go`
+- **Commands**: `cmd/root.go` (flags), `cmd/deploy.go`, `cmd/destroy.go`, `cmd/download.go`, `cmd/check.go`, `cmd/config.go`, `cmd/list.go`, `cmd/info.go`, `cmd/start.go`, `cmd/shutdown.go`, `cmd/stop.go`, `cmd/reboot.go`, `cmd/console.go`, `cmd/edit.go`, `cmd/ip.go`
 - **Packages** (`pkg/`):
   - `pkg/config/` — `~/.config/kdeploy.conf` key=value parser
   - `pkg/check/` — pre-flight checks (KVM, libvirt, disk space, SSH key)
