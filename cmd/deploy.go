@@ -19,6 +19,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func promptValue(prompt, defaultVal string) string {
+	fmt.Printf("%s [%s]: ", prompt, defaultVal)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	val := strings.TrimSpace(scanner.Text())
+	if val == "" {
+		return defaultVal
+	}
+	return val
+}
+
 func confirmPrompt(msg string) bool {
 	fmt.Printf("   %s [Y/n] ", msg)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -42,6 +53,13 @@ VM name is required. Optional disk size (default: 20G).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		size := vmSize
+
+		var cleanupFiles []string
+		defer func() {
+			for _, f := range cleanupFiles {
+				sudoRemove(f)
+			}
+		}()
 		if len(args) > 1 {
 			size = args[1]
 		}
@@ -104,22 +122,41 @@ VM name is required. Optional disk size (default: 20G).`,
 		selected := images[0]
 		fmt.Printf("📦 Selected image: %s (%s)\n", selected.Filename, selected.OS.OSVariant)
 
-		// 5. Generate password hash
-		pass := cfg.DefaultPass
-		hash, err := iso.HashPassword(pass)
+		// 5. Interactive prompts (gated by --yes)
+		vmPass := cfg.DefaultPass
+		vmRAMVal := vmRAM
+		vmCPUsVal := vmCPUs
+		var pkgList []string
+		if !skipConfirm {
+			promptPass := strings.TrimSpace(promptValue("🔑 VM password", vmPass))
+			if promptPass != "" {
+				vmPass = promptPass
+			}
+			vmRAMVal = promptValue("   RAM (MB)", vmRAM)
+			vmCPUsVal = promptValue("   vCPUs", vmCPUs)
+			pkgChoice := promptValue("📦 Install packages? (space-separated, or 'none')", "none")
+			if pkgChoice != "" && !strings.EqualFold(pkgChoice, "none") {
+				for _, p := range strings.Fields(pkgChoice) {
+					pkgList = append(pkgList, strings.TrimSpace(p))
+				}
+			}
+		}
+		hash, err := iso.HashPassword(vmPass)
 		if err != nil {
 			return fmt.Errorf("password hash: %w", err)
 		}
 
 		// 6. Generate cloud-init ISO
 		cloudData := &iso.CloudInitData{
-			Hostname:     name,
-			InstanceID:   fmt.Sprintf("%s-%d", name, time.Now().Unix()),
-			SSHPublicKey: readPubKey(keyPath),
-			PasswordHash: hash,
-			Username:     os.Getenv("USER"),
+			Hostname:      name,
+			InstanceID:    fmt.Sprintf("%s-%d", name, time.Now().Unix()),
+			SSHPublicKey:  readPubKey(keyPath),
+			PasswordHash:  hash,
+			Username:      os.Getenv("USER"),
+			Packages:      pkgList,
 		}
 		seedPath := filepath.Join(storPath, name+"-seed.iso")
+		cleanupFiles = append(cleanupFiles, seedPath)
 		fmt.Println("🔧 Generating cloud-init...")
 		if err := iso.GenerateSeedISO(cloudData, seedPath, fileSudo); err != nil {
 			return fmt.Errorf("cloud-init iso: %w", err)
@@ -131,6 +168,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("detect backing format: %w", err)
 		}
 		overlayPath := filepath.Join(storPath, name+".qcow2")
+		cleanupFiles = append(cleanupFiles, overlayPath)
 		fmt.Printf("💾 Creating overlay image (%s)...\n", size)
 		if err := storage.CreateOverlay(selected.Path, overlayPath, size, backingFmt, fileSudo); err != nil {
 			return fmt.Errorf("overlay: %w", err)
@@ -140,8 +178,8 @@ VM name is required. Optional disk size (default: 20G).`,
 		fmt.Println("🚀 Booting VM...")
 		vmCfg := &hypervisor.VMConfig{
 			Name:      name,
-			RAM:       vmRAM,
-			CPUs:      vmCPUs,
+			RAM:       vmRAMVal,
+			CPUs:      vmCPUsVal,
 			DiskPath:  overlayPath,
 			ISOPath:   seedPath,
 			Network:   vmNetwork,
@@ -178,6 +216,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("ssh config: %w", err)
 		}
 
+		cleanupFiles = nil
 		fmt.Println("\n✅ VM Ready!")
 		fmt.Printf("   ssh %s\n", name)
 		fmt.Printf("   ssh %s-root\n", name)
