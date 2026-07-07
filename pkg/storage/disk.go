@@ -22,21 +22,30 @@ func CheckSpace(path string) (*DiskInfo, error) {
 	}, nil
 }
 
-func CreateOverlay(backingPath, overlayPath, size, backingFmt string) error {
+func CreateOverlay(backingPath, overlayPath, size, backingFmt string, useSudo bool) error {
 	args := []string{
 		"qemu-img", "create", "-f", "qcow2",
 		"-b", backingPath, "-F", backingFmt,
 		overlayPath, size,
 	}
-	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	cmd := exec.Command(args[0], args[1:]...)
+	if useSudo {
+		cmd = exec.Command("sudo", args...)
+	}
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("qemu-img create overlay: %w\n%s", err, out)
 	}
 	return nil
 }
 
-func DetectFormat(path string) (string, error) {
-	out, err := exec.Command("qemu-img", "info", path).Output()
+func DetectFormat(path string, useSudo bool) (string, error) {
+	args := []string{"qemu-img", "info", path}
+	cmd := exec.Command(args[0], args[1:]...)
+	if useSudo {
+		cmd = exec.Command("sudo", args...)
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("qemu-img info: %w", err)
 	}

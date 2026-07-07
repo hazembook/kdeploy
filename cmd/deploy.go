@@ -51,7 +51,8 @@ VM name is required. Optional disk size (default: 20G).`,
 			storPath = storagePath
 		}
 
-		useSudo := hypervisor.NeedsSudo()
+		cmdSudo := hypervisor.NeedsSudo()                  // for virsh/virt-install
+		fileSudo := hypervisor.NeedsPrivilegedPath(storPath) // for qemu-img, cloud-localds, rm
 
 		// 2. Pre-flight checks
 		fmt.Println("🔍 Running pre-flight checks...")
@@ -97,14 +98,14 @@ VM name is required. Optional disk size (default: 20G).`,
 		}
 		seedPath := filepath.Join(storPath, name+"-seed.iso")
 		fmt.Println("🔧 Generating cloud-init...")
-		if err := iso.GenerateSeedISO(cloudData, seedPath); err != nil {
+		if err := iso.GenerateSeedISO(cloudData, seedPath, fileSudo); err != nil {
 			return fmt.Errorf("cloud-init iso: %w", err)
 		}
 
 		// 6. Create overlay disk
 		overlayPath := filepath.Join(storPath, name+".qcow2")
 		fmt.Printf("💾 Creating overlay image (%s)...\n", size)
-		if err := storage.CreateOverlay(selected.Path, overlayPath, size, selected.OS.OSVariant); err != nil {
+		if err := storage.CreateOverlay(selected.Path, overlayPath, size, selected.OS.OSVariant, fileSudo); err != nil {
 			return fmt.Errorf("overlay: %w", err)
 		}
 
@@ -119,13 +120,13 @@ VM name is required. Optional disk size (default: 20G).`,
 			Network:   vmNetwork,
 			OSVariant: selected.OS.OSVariant,
 		}
-		if err := hypervisor.Deploy(vmCfg, useSudo); err != nil {
+		if err := hypervisor.Deploy(vmCfg, cmdSudo); err != nil {
 			return fmt.Errorf("deploy: %w", err)
 		}
 
 		// 8. Wait for IP
 		fmt.Println("⏳ Waiting for IP address...")
-		ip, err := hypervisor.WaitForIP(name, netName(vmNetwork), useSudo, 90*time.Second)
+		ip, err := hypervisor.WaitForIP(name, netName(vmNetwork), cmdSudo, 90*time.Second)
 		if err != nil {
 			return fmt.Errorf("ip discovery: %w", err)
 		}

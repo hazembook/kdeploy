@@ -15,7 +15,7 @@ type CloudInitData struct {
 	Packages      []string
 }
 
-func GenerateSeedISO(data *CloudInitData, outputPath string) error {
+func GenerateSeedISO(data *CloudInitData, outputPath string, useSudo bool) error {
 	workDir, err := os.MkdirTemp("", "kdeploy-cloudinit-*")
 	if err != nil {
 		return fmt.Errorf("mktemp: %w", err)
@@ -64,7 +64,11 @@ local-hostname: %s
 	}
 
 	// Use cloud-localds from host (pure-Go ISO generation TBD)
-	cmd := exec.Command("cloud-localds", outputPath, udPath, mdPath)
+	args := []string{"cloud-localds", outputPath, udPath, mdPath}
+	cmd := exec.Command(args[0], args[1:]...)
+	if useSudo {
+		cmd = exec.Command("sudo", args...)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cloud-localds failed: %w\n%s", err, out)
 	}

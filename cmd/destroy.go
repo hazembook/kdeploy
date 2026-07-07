@@ -12,6 +12,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func sudoRemove(path string) error {
+	pre := hypervisor.SudoForPath(path)
+	if pre == nil {
+		return os.Remove(path)
+	}
+	return exec.Command(pre[0], "rm", "-f", path).Run()
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy <vm_name>",
 	Short: "Destroy a VM and clean up resources",
@@ -33,14 +41,8 @@ var destroyCmd = &cobra.Command{
 
 		hypervisor.Destroy(name, useSudo)
 
-		removeFile := os.Remove
-		if useSudo {
-			removeFile = func(path string) error {
-				return exec.Command("sudo", "rm", "-f", path).Run()
-			}
-		}
-		removeFile(filepath.Join(storPath, name+".qcow2"))
-		removeFile(filepath.Join(storPath, name+"-seed.iso"))
+		sudoRemove(filepath.Join(storPath, name+".qcow2"))
+		sudoRemove(filepath.Join(storPath, name+"-seed.iso"))
 
 		incDir, _ := ssh.IncludeDir()
 		ssh.RemoveHostConfig(name, incDir)
