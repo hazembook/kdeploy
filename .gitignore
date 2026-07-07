@@ -1,5 +1,6 @@
 # Go build artifacts
 kdeploy-go
+bin/
 *.exe
 
 # IDE
