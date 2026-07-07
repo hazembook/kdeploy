@@ -136,11 +136,32 @@ VM name is required. Optional disk size (default: 20G).`,
 				return fmt.Errorf("pre-flight check failed: %s", r.Name)
 			}
 		}
-		keyPath, kr := check.SSHKey()
-		if !kr.Passed {
-			return fmt.Errorf("pre-flight: %s", kr.Error)
+
+		// 2a. Auto-fix SSH key if missing
+		keyPath, err := check.EnsureSSHKey()
+		if err != nil {
+			return fmt.Errorf("ssh key: %w", err)
 		}
-		fmt.Printf("   ✅ %s (%s)\n", kr.Name, keyPath)
+		fmt.Printf("   ✅ SSH key (%s)\n", keyPath)
+
+		// 2b. Ensure default network is active
+		netResult := check.DefaultNetwork(cmdSudo)
+		if netResult.Passed {
+			fmt.Println("   ✅ Default network active")
+		} else {
+			fmt.Printf("   ⚙️  %s...\n", netResult.Error)
+			if err := check.EnsureDefaultNetwork(cmdSudo); err != nil {
+				return fmt.Errorf("default network: %w", err)
+			}
+			fmt.Println("   ✅ Default network ready")
+		}
+
+		// 2c. Firewall rule for custom bridge networks
+		bridgeName := netName(vmNetwork)
+		if bridgeName != "default" {
+			fmt.Printf("   ⚙️  Configuring UFW for bridge %s...\n", bridgeName)
+			check.EnsureFirewallRule(bridgeName, cmdSudo)
+		}
 
 		// 3. VM-exists check + cleanup
 		if hypervisor.VMExists(name, cmdSudo) {
