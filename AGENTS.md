@@ -1,5 +1,7 @@
 # kdeploy Agent Instructions
 
+> **Go Rewrite Phase**: All work branches from and merges to `golang-rewrite-experiment`. Nothing is pushed to remotes. Once the rewrite is stable with thorough and comprehensive tests, this changes to target `main`.
+
 <!-- BEGIN BR INTEGRATION v:1 profile:full -->
 
 ## Issue Tracking with br (beads_rust)
@@ -60,10 +62,10 @@ br close <id> --reason "Substantive summary of what was done" --actor "$ACTOR" -
 - `3` — Low (polish, optimization)
 - `4` — Backlog (future ideas)
 
-### Workflow for AI Agents
+### Workflow for AI Agents (Go Rewrite Phase)
 
 1. **Check ready work**: `br ready --json` shows unblocked issues
-2. **Create the feature branch first**: `git switch -c feat/<short-description>` before any state changes
+2. **Create the feature branch from the rewrite branch**: `git switch golang-rewrite-experiment && git switch -c feat/<short-description>` before any state changes
 3. **Claim on the branch and commit beads**: `br update <id> --status in_progress --actor "$ACTOR" --json && git add .beads/ && git commit -m "chore(br): claim <id>"`
 4. **Investigate using MCP tools before writing code:**
    - `mcp__semble__search` — search the codebase by intent/concept
@@ -79,15 +81,17 @@ Rationale: single-owner project, feature branches stay local. The agent works on
 
 - **Agent** owns: check br, branch, claim, investigate, present investigation report, implement, test, quality gates, present handoff report
 - **Human** owns: review investigation report (approve approach), review diff + handoff (approve publish)
-- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to main, clean up branch
+- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to `golang-rewrite-experiment`, clean up branch
+- **When rewrite is stable with thorough tests**, the target branch changes to `main`
 
 ### Pre-change Workflow (Direct Requests)
 
 For **direct requests** from the user or **work that isn't tracked**:
 
 1. **Check br for related work**: `br ready --json` and `br list --json`. If an existing issue covers the request, claim it. Otherwise create a new task.
-2. **Branch from main first, then claim on the branch:**
+2. **Branch from `golang-rewrite-experiment` first, then claim on the branch:**
    ```bash
+   git switch golang-rewrite-experiment
    git switch -c feat/<short-description>
    br update <id> --status in_progress --actor "$ACTOR" --json
    git add .beads/ && git commit -m "chore(br): claim <id>"
@@ -104,7 +108,7 @@ git add -A && git commit -m "wip: <id> partial checkpoint"
 git switch -c feat/<next-id>
 # When returning:
 git switch <paused-branch>
-git rebase main
+git rebase golang-rewrite-experiment
 # continue
 ```
 
@@ -144,7 +148,7 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
 - **Diff highlights**: what changed and why
 - **Quality gates**: `make build`, `make vet`, `make test` results
 - **What was NOT done**: deferred work, known limitations, follow-up issues
-- **Suggested merge message**: proposed commit message for main
+- **Suggested merge message**: proposed commit message for `golang-rewrite-experiment`
 
 ## Session Completion
 
@@ -169,10 +173,10 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
    ```
    The `--reason` must be a substantive summary, not git bookkeeping.
 
-8. **Fast-forward `main`:**
+8. **Fast-forward `golang-rewrite-experiment`:**
    ```bash
-   git rebase main
-   git switch main
+   git rebase golang-rewrite-experiment
+   git switch golang-rewrite-experiment
    git merge <feat-branch>   # fast-forward
    ```
 
@@ -183,10 +187,12 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
 
 **CRITICAL RULES:**
 - The agent **never** force-pushes (`--force` / `--force-with-lease`)
-- The agent **never** merges to `main` without explicit human confirmation
-- The agent **never** pushes — only the human does
+- The agent **never** merges to `golang-rewrite-experiment` without explicit human confirmation
+- The agent **never** pushes to any remote
 - A "thanks" or "looks good" is **not** approval
 - If the agent hits a git state it can't recover from, it commits a `wip:` checkpoint and hands off
+
+> **Future**: Once the rewrite is stable with thorough and comprehensive tests, the target branch changes to `main` and pushing to `origin` becomes part of the flow.
 
 <!-- END BR INTEGRATION -->
 
@@ -224,7 +230,7 @@ make clean        # rm -rf bin/
 - **Error handling**: wrap errors with `%w` using `fmt.Errorf("context: %w", err)`. Return early on failure in deploy pipeline.
 - **Testing**: std `testing` package, table-driven tests for pure functions, integration tests for hypervisor/ssh (gated on virsh availability).
 - **Commit messages**: Conventional Commits (`type(scope): message`), imperative mood, ≤ 72 chars. Use footer `Refs: br-xxx` for issue linkage.
-- **Branches**: `feat/<short-description>` off `main`. One branch per task. Do not push — local-only.
+- **Branches**: `feat/<short-description>` off `golang-rewrite-experiment`. One branch per task. Do not push — local-only. Targets `main` once the rewrite is stable with thorough tests.
 - **Config format**: `~/.config/kdeploy.conf` — `KEY=VAL` lines, `#` comments. Keys: `IMAGE_PATH`, `STORAGE_PATH`, `DEFAULT_VM_SIZE`, `DEFAULT_RAM`, `DEFAULT_CPUS`, `DEFAULT_PASSWORD`.
 - **Code comments**: keep code self-documenting. No TODO/FIXME/HACK markers — use br. No commented-out code.
 
