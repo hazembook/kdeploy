@@ -23,7 +23,11 @@ func GetDomifaddr(name string, useSudo bool) (string, error) {
 		fields := strings.Fields(line)
 		for _, f := range fields {
 			if strings.Contains(f, "/") {
-				return strings.Split(f, "/")[0], nil
+				ip := strings.Split(f, "/")[0]
+				if strings.HasPrefix(ip, "127.") {
+					continue
+				}
+				return ip, nil
 			}
 		}
 	}

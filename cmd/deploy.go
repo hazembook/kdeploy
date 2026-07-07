@@ -102,10 +102,14 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("cloud-init iso: %w", err)
 		}
 
-		// 6. Create overlay disk
+		// 6. Detect backing format + create overlay
+		backingFmt, err := storage.DetectFormat(selected.Path, fileSudo)
+		if err != nil {
+			return fmt.Errorf("detect backing format: %w", err)
+		}
 		overlayPath := filepath.Join(storPath, name+".qcow2")
 		fmt.Printf("💾 Creating overlay image (%s)...\n", size)
-		if err := storage.CreateOverlay(selected.Path, overlayPath, size, selected.OS.OSVariant, fileSudo); err != nil {
+		if err := storage.CreateOverlay(selected.Path, overlayPath, size, backingFmt, fileSudo); err != nil {
 			return fmt.Errorf("overlay: %w", err)
 		}
 
