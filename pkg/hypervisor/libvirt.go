@@ -2,7 +2,9 @@ package hypervisor
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 type VMConfig struct {
@@ -58,6 +60,115 @@ func Destroy(name string, useSudo bool) error {
 		_ = cmd.Run() // best-effort
 	}
 	return nil
+}
+
+type VMEntry struct {
+	ID    string
+	Name  string
+	State string
+}
+
+func List(useSudo bool) ([]VMEntry, error) {
+	args := []string{"virsh", "list", "--all"}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("virsh list: %w", err)
+	}
+	var entries []VMEntry
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if line == "" || strings.HasPrefix(line, "---") || strings.HasPrefix(line, " Id") {
+			continue
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 3 {
+			entries = append(entries, VMEntry{
+				ID:    fields[0],
+				Name:  fields[1],
+				State: strings.Join(fields[2:], " "),
+			})
+		}
+	}
+	return entries, nil
+}
+
+func VMStart(name string, useSudo bool) error {
+	args := []string{"virsh", "start", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("virsh start: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func VMShutdown(name string, useSudo bool) error {
+	args := []string{"virsh", "shutdown", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("virsh shutdown: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func VMStop(name string, useSudo bool) error {
+	args := []string{"virsh", "destroy", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("virsh destroy: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func VMReboot(name string, useSudo bool) error {
+	args := []string{"virsh", "reboot", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("virsh reboot: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func VMConsole(name string, useSudo bool) error {
+	args := []string{"virsh", "console", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = nil
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func VMEdit(name string, useSudo bool) error {
+	args := []string{"virsh", "edit", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func VMExists(name string, useSudo bool) bool {
