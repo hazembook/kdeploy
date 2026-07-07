@@ -2,8 +2,10 @@ package ssh
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const includeDirName = "kdeploy.d"
@@ -69,3 +71,17 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+func WaitForSSH(ip string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "22"), 2*time.Second)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("SSH not reachable at %s:22 after %v", ip, timeout)
+}
+
