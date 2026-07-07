@@ -7,16 +7,8 @@ import (
 	"time"
 )
 
-func GetDomifaddr(name string, useSudo bool) (string, error) {
-	args := []string{"virsh", "domifaddr", name, "--source", "agent"}
-	if useSudo {
-		args = append([]string{"sudo"}, args...)
-	}
-	out, err := exec.Command(args[0], args[1:]...).Output()
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
+func getIPFromOutput(out string) string {
+	for _, line := range strings.Split(out, "\n") {
 		if !strings.Contains(line, "ipv4") {
 			continue
 		}
@@ -24,13 +16,40 @@ func GetDomifaddr(name string, useSudo bool) (string, error) {
 		for _, f := range fields {
 			if strings.Contains(f, "/") {
 				ip := strings.Split(f, "/")[0]
-				if strings.HasPrefix(ip, "127.") {
-					continue
+				if !strings.HasPrefix(ip, "127.") {
+					return ip
 				}
-				return ip, nil
 			}
 		}
 	}
+	return ""
+}
+
+func GetDomifaddr(name string, useSudo bool) (string, error) {
+	// Try agent source first (requires qemu-guest-agent in VM)
+	args := []string{"virsh", "domifaddr", name, "--source", "agent"}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err := exec.Command(args[0], args[1:]...).Output()
+	if err == nil {
+		if ip := getIPFromOutput(string(out)); ip != "" {
+			return ip, nil
+		}
+	}
+
+	// Fallback to ARP/lease source (always available)
+	args = []string{"virsh", "domifaddr", name}
+	if useSudo {
+		args = append([]string{"sudo"}, args...)
+	}
+	out, err = exec.Command(args[0], args[1:]...).Output()
+	if err == nil {
+		if ip := getIPFromOutput(string(out)); ip != "" {
+			return ip, nil
+		}
+	}
+
 	return "", fmt.Errorf("no ipv4 address found")
 }
 

@@ -159,6 +159,26 @@ func VMConsole(name string, useSudo bool) error {
 	return cmd.Run()
 }
 
+func VMNuke(name string, useSudo bool) error {
+	prefix := []string{}
+	if useSudo {
+		prefix = []string{"sudo"}
+	}
+
+	cmds := [][]string{
+		append(prefix, "virsh", "destroy", name),
+		append(prefix, "virsh", "undefine", name, "--remove-all-storage"),
+	}
+	var lastErr error
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
 func VMEdit(name string, useSudo bool) error {
 	args := []string{"virsh", "edit", name}
 	if useSudo {
