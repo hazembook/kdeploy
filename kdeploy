@@ -82,7 +82,6 @@ OVERRIDE_IMAGE_PATH=""
 OVERRIDE_STORAGE_PATH=""
 OVERRIDE_RAM=""
 OVERRIDE_CPUS=""
-VM_NETWORK="default"
 
 # ---------------------
 # Handle if script is run via sudo/doas
@@ -413,9 +412,9 @@ RECONFIG=false
 SKIP_CONFIRM=false
 POSITIONAL_ARGS=()
 
-# Handle destroy command early (before normal argument parsing)
-if [[ "$1" == "destroy" ]]; then
-    DESTROY_VM="$2"
+# Destroy VM function (consolidated)
+do_destroy() {
+    local DESTROY_VM="$1"
     if [[ -z "$DESTROY_VM" ]]; then
         echo "Usage: $0 destroy <vm_name>"
         exit 1
@@ -423,7 +422,6 @@ if [[ "$1" == "destroy" ]]; then
     
     load_config
     
-    # Determine privilege command
     if id -nG "$USER" | grep -qw "libvirt"; then
         PRIV_CMD=""
     else
@@ -441,17 +439,25 @@ if [[ "$1" == "destroy" ]]; then
     $PRIV_CMD virsh destroy "$DESTROY_VM" 2>/dev/null || true
     $PRIV_CMD virsh undefine "$DESTROY_VM" --remove-all-storage 2>/dev/null || true
     
-    # Remove qcow2 and seed.iso files
     if [[ -n "$STORAGE_PATH" ]]; then
-        $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null || true
-        $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null || true
+        if needs_privilege "$STORAGE_PATH"; then
+            $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null || true
+            $PRIV_CMD rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null || true
+        else
+            rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null || true
+            rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null || true
+        fi
     fi
     
-    # Remove SSH config include
     rm -f "$SSH_INCLUDE_DIR/${DESTROY_VM}.conf" 2>/dev/null || true
     
     echo "✅ VM '$DESTROY_VM' has been destroyed and cleaned up."
     exit 0
+}
+
+# Handle destroy command early (before normal argument parsing)
+if [[ "$1" == "destroy" ]]; then
+    do_destroy "$2"
 fi
 
 while [[ $# -gt 0 ]]; do
@@ -497,10 +503,6 @@ while [[ $# -gt 0 ]]; do
             OVERRIDE_STORAGE_PATH="yes"
             shift 2
             ;;
-        -n|--network)
-            VM_NETWORK="$2"
-            shift 2
-            ;;
         -h|--help)
             show_help
             exit 0
@@ -520,37 +522,7 @@ done
 set -- "${POSITIONAL_ARGS[@]}"
 
 if [[ "${POSITIONAL_ARGS[0]}" == "destroy" ]]; then
-    DESTROY_VM="${POSITIONAL_ARGS[1]}"
-    if [[ -z "$DESTROY_VM" ]]; then
-        echo "Usage: $0 destroy <vm_name>"
-        exit 1
-    fi
-    
-    load_config
-    
-    if id -nG "$USER" | grep -qw "libvirt"; then
-        PRIV_CMD=""
-    else
-        if command -v doas &> /dev/null; then
-            PRIV_CMD="doas"
-        elif command -v sudo &> /dev/null; then
-            PRIV_CMD="sudo"
-        else
-            echo "❌ Critical: No privilege escalation tool found."
-            exit 1
-        fi
-    fi
-    
-    echo "🔥 Destroying VM: $DESTROY_VM"
-    $PRIV_CMD virsh destroy "$DESTROY_VM" 2>/dev/null || true
-    $PRIV_CMD virsh undefine "$DESTROY_VM" --remove-all-storage 2>/dev/null || true
-    
-    rm -f "$STORAGE_PATH/${DESTROY_VM}.qcow2" 2>/dev/null
-    rm -f "$STORAGE_PATH/${DESTROY_VM}-seed.iso" 2>/dev/null
-    rm -f "$SSH_INCLUDE_DIR/${DESTROY_VM}.conf" 2>/dev/null
-    
-    echo "✅ VM '$DESTROY_VM' destroyed successfully"
-    exit 0
+    do_destroy "${POSITIONAL_ARGS[1]}"
 fi
 
 VM_NAME="${POSITIONAL_ARGS[0]:-}"
@@ -612,7 +584,7 @@ fi
 
 # Disk Space Check
 echo "🔍 Checking disk space..."
-STORAGE_DIR=$(df "$STORAGE_PATH" | tail -1 | awk '{print $4}')  # Available space in KB
+STORAGE_DIR=$(df -P "$STORAGE_PATH" | tail -1 | awk '{print $4}')  # Available space in KB
 REQUIRED_SPACE=20971520  # 20GB in KB (approx)
 
 if [[ $STORAGE_DIR -lt $REQUIRED_SPACE ]]; then
@@ -821,6 +793,34 @@ if [[ ! -f "$SSH_PUB_KEY" ]]; then
     fi
 else
     echo "   ✅ SSH key found at $SSH_PUB_KEY"
+fi
+
+# 6. UFW Firewall Check (for custom networks on Arch/CachyOS/Debian/Ubuntu)
+NET_BASE_NAME=$(echo "$VM_NETWORK" | cut -d, -f1)
+if [[ "$NET_BASE_NAME" != "default" ]] && command -v ufw &>/dev/null; then
+    echo "🔍 Checking UFW firewall..."
+    if ufw status 2>/dev/null | grep -qi "active"; then
+        BRIDGE_NAME=$($PRIV_CMD virsh net-info "$NET_BASE_NAME" 2>/dev/null | grep "Bridge:" | awk '{print $2}')
+        if [[ -n "$BRIDGE_NAME" ]]; then
+            if ! ufw status verbose 2>/dev/null | grep -qi "$BRIDGE_NAME"; then
+                echo "   ⚠️  UFW is active and may block DHCP on bridge '$BRIDGE_NAME'."
+                echo "   Fix: sudo ufw allow in on $BRIDGE_NAME"
+                echo "        sudo ufw route allow in on $BRIDGE_NAME"
+                echo "        sudo ufw route allow out on $BRIDGE_NAME"
+                if [[ "$SKIP_CONFIRM" != true ]]; then
+                    read -p "   Continue anyway? [Y/n] " continue_ufw
+                    if [[ "${continue_ufw,,}" == "n" ]]; then
+                        echo "   Apply the rules above and retry."
+                        exit 1
+                    fi
+                fi
+            else
+                echo "   ✅ UFW allows traffic on bridge '$BRIDGE_NAME'"
+            fi
+        fi
+    else
+        echo "   ✅ UFW is not active"
+    fi
 fi
 
 # --- DEPENDENCY CHECK ---
@@ -1076,7 +1076,6 @@ ssh_pwauth: false
 preserve_hostname: false
 timezone: UTC
 hostname: ${VM_NAME}
-timezone: UTC
 "
 
 # Add packages if any
@@ -1175,7 +1174,8 @@ while [ -z "$IP" ]; do
         | head -n1)
     
     if [ -z "$IP" ]; then
-        IP=$($PRIV_CMD virsh net-dhcp-leases default 2>/dev/null \
+        NET_NAME=$(echo "$VM_NETWORK" | cut -d, -f1)
+        IP=$($PRIV_CMD virsh net-dhcp-leases "$NET_NAME" 2>/dev/null \
             | grep "$MAC" \
             | awk '{print $5}' \
             | cut -d/ -f1 \
@@ -1186,6 +1186,21 @@ while [ -z "$IP" ]; do
 done
 
 ssh-keygen -R "$IP" 2>/dev/null
+
+# --- WAIT FOR SSH ---
+echo -e "\n⏳ Waiting for SSH on $IP..."
+WAIT_COUNT=0
+while ! ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_PRIV_KEY" "root@$IP" "echo" &>/dev/null; do
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -gt 30 ]; then
+        echo -e "\n⚠️  Timed out waiting for SSH. VM may still be booting."
+        echo "   Try manually: ssh root@$IP"
+        break
+    fi
+    sleep 2
+    printf "."
+done
+echo ""
 
 # --- SAFER SSH CONFIG ---
 echo -e "\n📝 Managing SSH Config..."
