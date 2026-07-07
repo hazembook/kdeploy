@@ -19,6 +19,51 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func pickImage(images []detect.ScannedImage, imgPath string) *detect.ScannedImage {
+	fmt.Println("\n📦 Available images:")
+	for i, img := range images {
+		fmt.Printf("  %2d) %-50s %s\n", i+1, img.Filename, img.OS.OSVariant)
+	}
+	fmt.Printf("  %2d) 📥 Download a new image\n", len(images)+1)
+	choice := promptValue(fmt.Sprintf("Select image [1-%d]", len(images)+1), "1")
+	var idx int
+	if _, err := fmt.Sscanf(choice, "%d", &idx); err != nil {
+		return &images[0]
+	}
+	if idx == len(images)+1 {
+		if err := setupImagePicker(imgPath); err != nil {
+			fmt.Printf("   ❌ %v\n", err)
+			return &images[0]
+		}
+		rescanned, _ := detect.Scan(imgPath)
+		if len(rescanned) == 0 {
+			return &images[0]
+		}
+		return pickImage(rescanned, imgPath)
+	}
+	if idx < 1 || idx > len(images) {
+		return &images[0]
+	}
+	return &images[idx-1]
+}
+
+func setupImagePicker(imgPath string) error {
+	fmt.Println("\n📥 Image downloader")
+	fmt.Println("   Choose a source:")
+	fmt.Println("   1) Built-in catalog")
+	fmt.Println("   2) Custom URL")
+	choice := promptValue("   Select", "1")
+	if choice == "2" {
+		url := promptValue("   Enter URL", "")
+		if url == "" {
+			return fmt.Errorf("no URL provided")
+		}
+		useSudo := hypervisor.NeedsPrivilegedPath(imgPath)
+		return downloadFile(url, imgPath, useSudo)
+	}
+	return pickAndDownload(buildCatalog(), imgPath, hypervisor.NeedsPrivilegedPath(imgPath))
+}
+
 func promptValue(prompt, defaultVal string) string {
 	fmt.Printf("%s [%s]: ", prompt, defaultVal)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -117,9 +162,29 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("scan images: %w", err)
 		}
 		if len(images) == 0 {
-			return fmt.Errorf("no cloud images found in %s", imgPath)
+			if !skipConfirm {
+				fmt.Println("   No images found — launching download prompt...")
+				imgPath = cfg.ImagePath
+				if imagePath != "" {
+					imgPath = imagePath
+				}
+				if err := setupImagePicker(imgPath); err != nil {
+					return err
+				}
+				images, _ = detect.Scan(imgPath)
+			}
+			if len(images) == 0 {
+				return fmt.Errorf("no cloud images found in %s", imgPath)
+			}
 		}
 		selected := images[0]
+		if !skipConfirm {
+			s := pickImage(images, imgPath)
+			if s == nil {
+				return fmt.Errorf("image selection cancelled")
+			}
+			selected = *s
+		}
 		fmt.Printf("📦 Selected image: %s (%s)\n", selected.Filename, selected.OS.OSVariant)
 
 		// 5. Interactive prompts (gated by --yes)
