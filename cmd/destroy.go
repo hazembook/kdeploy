@@ -13,11 +13,14 @@ import (
 )
 
 func sudoRemove(path string) error {
-	pre := hypervisor.SudoForPath(path)
-	if pre == nil {
-		return os.Remove(path)
+	err := os.Remove(path)
+	if err == nil {
+		return nil
 	}
-	return exec.Command(pre[0], "rm", "-f", path).Run()
+	if !os.IsNotExist(err) {
+		return exec.Command("sudo", "rm", "-f", path).Run()
+	}
+	return nil
 }
 
 var destroyCmd = &cobra.Command{

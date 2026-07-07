@@ -60,6 +60,15 @@ func Destroy(name string, useSudo bool) error {
 	return nil
 }
 
+func VMExists(name string, useSudo bool) bool {
+	args := []string{"virsh", "dominfo", name}
+	cmd := exec.Command(args[0], args[1:]...)
+	if useSudo {
+		cmd = exec.Command("sudo", args...)
+	}
+	return cmd.Run() == nil
+}
+
 func GetMAC(name string, useSudo bool) (string, error) {
 	args := []string{"virsh", "dumpxml", name}
 	if useSudo {

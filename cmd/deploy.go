@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,14 @@ import (
 	"github.com/hazembook/kdeploy/pkg/storage"
 	"github.com/spf13/cobra"
 )
+
+func confirmPrompt(msg string) bool {
+	fmt.Printf("   %s [Y/n] ", msg)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	answer := strings.TrimSpace(scanner.Text())
+	return answer == "" || strings.EqualFold(answer, "y")
+}
 
 const diskSpaceMinKB = 20 * 1024 * 1024 // 20GB
 
@@ -70,7 +79,21 @@ VM name is required. Optional disk size (default: 20G).`,
 		}
 		fmt.Printf("   ✅ %s (%s)\n", kr.Name, keyPath)
 
-		// 3. Scan images
+		// 3. VM-exists check + cleanup
+		if hypervisor.VMExists(name, cmdSudo) {
+			fmt.Printf("   ⚠️  VM '%s' already exists — will be DESTROYED and recreated!\n", name)
+			if !skipConfirm && !confirmPrompt("   Continue?") {
+				return fmt.Errorf("aborted by user")
+			}
+			fmt.Println("🧹 Cleaning up old VM...")
+			hypervisor.Destroy(name, cmdSudo)
+			sudoRemove(filepath.Join(storPath, name+".qcow2"))
+			sudoRemove(filepath.Join(storPath, name+"-seed.iso"))
+			incDir, _ := ssh.IncludeDir()
+			ssh.RemoveHostConfig(name, incDir)
+		}
+
+		// 4. Scan images
 		images, err := detect.Scan(imgPath)
 		if err != nil {
 			return fmt.Errorf("scan images: %w", err)
@@ -81,14 +104,14 @@ VM name is required. Optional disk size (default: 20G).`,
 		selected := images[0]
 		fmt.Printf("📦 Selected image: %s (%s)\n", selected.Filename, selected.OS.OSVariant)
 
-		// 4. Generate password hash
+		// 5. Generate password hash
 		pass := cfg.DefaultPass
 		hash, err := iso.HashPassword(pass)
 		if err != nil {
 			return fmt.Errorf("password hash: %w", err)
 		}
 
-		// 5. Generate cloud-init ISO
+		// 6. Generate cloud-init ISO
 		cloudData := &iso.CloudInitData{
 			Hostname:     name,
 			InstanceID:   fmt.Sprintf("%s-%d", name, time.Now().Unix()),
@@ -102,7 +125,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("cloud-init iso: %w", err)
 		}
 
-		// 6. Detect backing format + create overlay
+		// 7. Detect backing format + create overlay
 		backingFmt, err := storage.DetectFormat(selected.Path, fileSudo)
 		if err != nil {
 			return fmt.Errorf("detect backing format: %w", err)
@@ -113,7 +136,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("overlay: %w", err)
 		}
 
-		// 7. Deploy VM
+		// 8. Deploy VM
 		fmt.Println("🚀 Booting VM...")
 		vmCfg := &hypervisor.VMConfig{
 			Name:      name,
@@ -128,7 +151,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			return fmt.Errorf("deploy: %w", err)
 		}
 
-		// 8. Wait for IP
+		// 9. Wait for IP
 		fmt.Println("⏳ Waiting for IP address...")
 		ip, err := hypervisor.WaitForIP(name, netName(vmNetwork), cmdSudo, 90*time.Second)
 		if err != nil {
@@ -136,10 +159,10 @@ VM name is required. Optional disk size (default: 20G).`,
 		}
 		fmt.Printf("   ✅ IP: %s\n", ip)
 
-		// 9. Clear known hosts entry
+		// 10. Clear known hosts entry
 		exec.Command("ssh-keygen", "-R", ip).Run()
 
-		// 10. Wait for SSH
+		// 11. Wait for SSH
 		fmt.Println("⏳ Waiting for SSH...")
 		if err := ssh.WaitForSSH(ip, 60*time.Second); err != nil {
 			fmt.Printf("   ⚠️  %s\n", err)
@@ -147,7 +170,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			fmt.Println("   ✅ SSH ready")
 		}
 
-		// 11. Write SSH config
+		// 12. Write SSH config
 		incDir, _ := ssh.IncludeDir()
 		os.MkdirAll(incDir, 0700)
 		ssh.EnsureInclude(filepath.Join(os.Getenv("HOME"), ".ssh", "config"))
