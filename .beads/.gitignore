@@ -1,0 +1,8 @@
+*.db
+*.db-shm
+*.db-wal
+*.lock
+last-touched
+*.tmp
+.br_history/
+.bv.lock
