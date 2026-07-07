@@ -31,9 +31,9 @@ kdeploy creates VMs in three simple steps:
 
 1. **Download a Cloud Image**: Fetch a pre-configured minimal OS image in qcow2 format (~1GB) from upstream providers like Rocky Linux, Ubuntu, Debian, or Fedora.
 
-1. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
+2. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
 
-1. **Cloud-Init Configuration**: On first boot, cloud-init automatically injects your SSH key, creates your user account, and installs any packages you specify.
+3. **Cloud-Init Configuration**: On first boot, cloud-init automatically injects your SSH key, creates your user account, and installs any packages you specify.
 
 **Total time**: ~30 seconds from start to SSH access.
 
@@ -64,11 +64,19 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 | Debian/Ubuntu | `libvirt-daemon-system virtinst qemu-utils cloud-image-utils openssl wget curl` |
 | Fedora/Rocky | `libvirt virt-install qemu-img cloud-utils openssl wget curl` |
 
-### Other Requirements
+### Prerequisites
 
-- KVM virtualization enabled in BIOS/UEFI
-- SSH public key at `~/.ssh/id_rsa.pub`
-- Write access to chosen storage path
+1. **KVM virtualization** enabled in BIOS/UEFI
+2. **SSH public key** at `~/.ssh/id_ed25519.pub` (auto-generated if missing)
+3. **libvirt group membership** (recommended for passwordless operation):
+
+   ```bash
+   sudo usermod -aG libvirt $USER
+   # Log out and back in for this to take effect
+   ```
+
+   Without this, `kdeploy` falls back to `sudo`/`doas` for privileged operations.
+4. **Write access** to chosen image and storage paths
 
 ## Installation
 
@@ -121,8 +129,11 @@ kdeploy myvm
 # Fully non-interactive (custom paths + skip confirmations)
 ./kdeploy myvm -i /path/to/images -s /path/to/storage -y
 
-# Use custom virtual network
+# Use custom virtual network (must exist: virsh net-define / virsh net-start)
 ./kdeploy myvm -n my-custom-network
+
+# Custom network with static MAC→IP mapping
+./kdeploy myvm -n "my-custom-network,mac=52:54:00:ab:cd:01"
 
 # Destroy a VM (quick teardown)
 ./kdeploy destroy myvm
@@ -201,9 +212,32 @@ Create isolated dev environments in seconds:
 ### Timeout Waiting for IP
 
 If deployment times out while waiting for DHCP/IP:
-- Connect to console: `virsh console <vm-name>` (login: cloud-user/rocky/ubuntu/debian)
-- Check network: `virsh net-dhcp-leases default`
-- For slow DHCP (wireless/bridged), increase timeout in script if needed
+
+1. **Check the VM console**: `virsh console <vm-name>` (login: cloud-user/rocky/ubuntu/debian)
+2. **Check network leases**: `sudo virsh net-dhcp-leases <network-name>` (use your custom network name, not `default`)
+3. **Verify your firewall allows traffic on the virtual bridge** (see below):
+
+#### Firewall Blocking DHCP on Custom Networks
+
+If you deployed with `-n my-custom-network`, your host firewall may block DHCP. Fix depends on your distro:
+
+| Distribution | Firewall | Fix |
+|---|---|---|
+| **Arch/CachyOS** | UFW | `sudo ufw allow in on virbr-xxx` + route rules (see below) |
+| **Ubuntu/Debian** | UFW | `sudo ufw allow in on virbr-xxx` + route rules (see below) |
+| **Fedora/Rocky/RHEL** | firewalld | `sudo firewall-cmd --zone=libvirt --add-interface=virbr-xxx --permanent` |
+
+**UFW-specific fix** (find your bridge name with `sudo virsh net-info <net-name>`):
+```bash
+sudo ufw allow in on virbr-xxx
+sudo ufw route allow in on virbr-xxx
+sudo ufw route allow out on virbr-xxx
+```
+
+After applying, restart the VM to trigger a fresh DHCP lease:
+```bash
+virsh destroy <vm-name> && virsh start <vm-name>
+```
 
 ### Permission Denied
 
@@ -287,6 +321,20 @@ function vxx
     virsh undefine $argv[1] --remove-all-storage
 end 
 ```
+
+---
+
+## Roadmap: Go Rewrite
+
+A compiled Go (Golang) version of `kdeploy` is under development on the **`golang-rewrite-experiment`** branch.
+
+**Key goals:**
+- **Zero host dependencies**: Pure-Go ISO 9660 generation replaces `cloud-localds`
+- **Native libvirt integration**: Direct Unix socket binding replaces `virt-install`/`virsh`
+- **Concurrent deployments**: Multi-VM lab orchestration via goroutines
+- **Modern CLI**: Cobra + interactive prompts via terminal libraries
+
+See the [`golang-rewrite-experiment`](https://github.com/hazembook/kdeploy/tree/golang-rewrite-experiment) branch for progress.
 
 ---
 
