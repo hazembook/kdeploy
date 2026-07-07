@@ -181,6 +181,211 @@ func EnsureFirewallRule(bridge string, useSudo bool) error {
 	return cmd.Run()
 }
 
+var requiredTools = []struct {
+	Name    string
+	Command string
+	Package string // hint for display
+}{
+	{"virsh", "virsh", "libvirt"},
+	{"virt-install", "virt-install", "virt-install"},
+	{"cloud-localds", "cloud-localds", "cloud-image-utils / cloud-utils"},
+	{"qemu-img", "qemu-img", "qemu-utils / qemu-img"},
+	{"openssl", "openssl", "openssl"},
+	{"wget/curl", "", "wget curl"},
+}
+
+func RequiredTools() []Result {
+	var results []Result
+	var missing []string
+
+	for _, tool := range requiredTools {
+		if tool.Command != "" {
+			if _, err := exec.LookPath(tool.Command); err != nil {
+				missing = append(missing, tool.Name)
+				results = append(results, Result{
+					Name: tool.Name, Passed: false,
+					Error: fmt.Sprintf("%s not found (install %s)", tool.Command, tool.Package),
+				})
+			} else {
+				results = append(results, Result{Name: tool.Name, Passed: true})
+			}
+		}
+	}
+
+	// wget/curl: need at least one
+	if _, errW := exec.LookPath("wget"); errW != nil {
+		if _, errC := exec.LookPath("curl"); errC != nil {
+			missing = append(missing, "wget/curl")
+			results = append(results, Result{
+				Name: "wget/curl", Passed: false,
+				Error: "neither wget nor curl found (install one)",
+			})
+		} else {
+			results = append(results, Result{Name: "wget/curl", Passed: true})
+		}
+	} else {
+		results = append(results, Result{Name: "wget/curl", Passed: true})
+	}
+
+	if len(missing) > 0 {
+		results = append(results, Result{
+			Name: "Dependencies", Passed: false,
+			Error: fmt.Sprintf("missing: %s", strings.Join(missing, ", ")),
+		})
+	} else {
+		results = append(results, Result{Name: "Dependencies", Passed: true})
+	}
+
+	return results
+}
+
+func DetectDistro() string {
+	osRelease, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		// Fallback checks
+		if _, err := os.Stat("/etc/arch-release"); err == nil {
+			return "arch"
+		}
+		if _, err := os.Stat("/etc/debian_version"); err == nil {
+			return "debian"
+		}
+		if _, err := os.Stat("/etc/fedora-release"); err == nil {
+			return "fedora"
+		}
+		return "unknown"
+	}
+
+	id := ""
+	idLike := ""
+	for _, line := range strings.Split(string(osRelease), "\n") {
+		if strings.HasPrefix(line, "ID=") {
+			id = strings.Trim(strings.TrimPrefix(line, "ID="), "\"'")
+		}
+		if strings.HasPrefix(line, "ID_LIKE=") {
+			idLike = strings.Trim(strings.TrimPrefix(line, "ID_LIKE="), "\"'")
+		}
+	}
+
+	distros := []string{id, idLike}
+	for _, d := range distros {
+		switch d {
+		case "arch", "manjaro", "endeavouros", "cachyos":
+			return "arch"
+		case "ubuntu", "linuxmint", "pop":
+			return "ubuntu"
+		case "debian":
+			return "debian"
+		case "fedora", "rhel", "centos":
+			return "fedora"
+		case "rocky", "almalinux":
+			return "rocky"
+		}
+		if strings.Contains(d, "opensuse") {
+			return "opensuse"
+		}
+	}
+	return id
+}
+
+func PackageManager(distro string) string {
+	switch distro {
+	case "arch":
+		if _, err := exec.LookPath("pacman"); err == nil {
+			return "pacman -S"
+		}
+	case "ubuntu", "debian":
+		if _, err := exec.LookPath("apt"); err == nil {
+			return "apt install"
+		}
+	case "fedora", "rocky":
+		if _, err := exec.LookPath("dnf"); err == nil {
+			return "dnf install"
+		}
+	}
+	// Direct lookup by binary
+	if _, err := exec.LookPath("pacman"); err == nil {
+		return "pacman -S"
+	}
+	if _, err := exec.LookPath("apt"); err == nil {
+		return "apt install"
+	}
+	if _, err := exec.LookPath("dnf"); err == nil {
+		return "dnf install"
+	}
+	if _, err := exec.LookPath("yum"); err == nil {
+		return "yum install"
+	}
+	if _, err := exec.LookPath("zypper"); err == nil {
+		return "zypper install"
+	}
+	return "unknown"
+}
+
+var distroPackages = map[string]string{
+	"arch":     "libvirt virt-install qemu-img cloud-utils openssl wget curl",
+	"debian":   "libvirt-daemon-system virtinst qemu-utils cloud-image-utils openssl wget curl",
+	"ubuntu":   "libvirt-daemon-system virtinst qemu-utils cloud-image-utils openssl wget curl",
+	"fedora":   "libvirt virt-install qemu-img cloud-utils openssl wget curl",
+	"rocky":    "libvirt virt-install qemu-img cloud-utils openssl wget curl",
+	"opensuse": "libvirt virt-install qemu-tools cloud-utils openssl wget curl",
+}
+
+func DistroPackageList(distro string) string {
+	if pkgs, ok := distroPackages[distro]; ok {
+		return pkgs
+	}
+	return ""
+}
+
+func InstallDependencies(distro, pkgManager string) error {
+	pkgs := DistroPackageList(distro)
+	if pkgs == "" {
+		return fmt.Errorf("no package list for distro %q", distro)
+	}
+
+	if !strings.Contains(pkgManager, " ") {
+		return fmt.Errorf("unknown package manager format: %s", pkgManager)
+	}
+
+	parts := strings.SplitN(pkgManager, " ", 2)
+	pkgMgr := parts[0]
+	installArg := parts[1]
+
+	var cmd *exec.Cmd
+	switch pkgMgr {
+	case "pacman":
+		cmd = exec.Command("sudo", pkgMgr, "-S", "--needed")
+		cmd.Args = append(cmd.Args, strings.Fields(pkgs)...)
+	case "apt":
+		cmd = exec.Command("sudo", "apt", "update")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("apt update: %w", err)
+		}
+		cmd = exec.Command("sudo", pkgMgr, installArg, "-y")
+		cmd.Args = append(cmd.Args, strings.Fields(pkgs)...)
+	default:
+		cmd = exec.Command("sudo", pkgMgr, installArg, "-y")
+		cmd.Args = append(cmd.Args, strings.Fields(pkgs)...)
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("install failed: %w", err)
+	}
+
+	// Re-check after install
+	missing := RequiredTools()
+	for _, r := range missing {
+		if !r.Passed {
+			return fmt.Errorf("some tools still missing after install: %s", r.Error)
+		}
+	}
+	return nil
+}
+
 func All(path string, minDiskKB uint64) []Result {
 	return []Result{
 		KVM(),

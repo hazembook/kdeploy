@@ -128,7 +128,11 @@ VM name is required. Optional disk size (default: 20G).`,
 
 		// 2. Pre-flight checks
 		fmt.Println("🔍 Running pre-flight checks...")
-		for _, r := range check.All(storPath, diskSpaceMinKB) {
+
+		deployTools := check.RequiredTools()
+		allToolLines := append(check.All(storPath, diskSpaceMinKB), deployTools...)
+
+		for _, r := range allToolLines {
 			if r.Passed {
 				fmt.Printf("   ✅ %s\n", r.Name)
 			} else {
