@@ -1,6 +1,6 @@
 # kdeploy Agent Instructions
 
-> **Go Rewrite Phase**: All work branches from and merges to `golang-rewrite-experiment`. Nothing is pushed to remotes. Once the rewrite is stable with thorough and comprehensive tests, this changes to target `main`.
+> **Stable Phase**: All work branches from and merges to `main`. Pushes to `origin` are allowed. The rewrite has reached full feature parity with the bash script with thorough tests.
 
 <!-- BEGIN BR INTEGRATION v:1 profile:full -->
 
@@ -62,10 +62,10 @@ br close <id> --reason "Substantive summary of what was done" --actor "$ACTOR" -
 - `3` — Low (polish, optimization)
 - `4` — Backlog (future ideas)
 
-### Workflow for AI Agents (Go Rewrite Phase)
+### Workflow for AI Agents
 
 1. **Check ready work**: `br ready --json` shows unblocked issues
-2. **Create the feature branch from the rewrite branch**: `git switch golang-rewrite-experiment && git switch -c feat/<short-description>` before any state changes
+2. **Create the feature branch from `main`**: `git switch main && git switch -c feat/<short-description>` before any state changes
 3. **Claim on the branch and commit beads**: `br update <id> --status in_progress --actor "$ACTOR" --json && git add .beads/ && git commit -m "chore(br): claim <id>"`
 4. **Investigate using MCP tools before writing code:**
    - `mcp__semble__search` — search the codebase by intent/concept
@@ -75,32 +75,13 @@ br close <id> --reason "Substantive summary of what was done" --actor "$ACTOR" -
 7. **Present a thorough handoff report** (see Reports section) and **stop and wait for explicit human confirmation** — the agent never assumes approval from a "thanks" or "looks good" alone
 8. **After explicit confirmation, run the publish steps** (see Session Completion)
 
-Rationale: single-owner project, feature branches stay local. The agent works on isolated, reproducible steps; the human reviews the diff and explicitly signs off. The "go ahead" is the gate.
+Rationale: single-owner project. The agent works on isolated, reproducible steps; the human reviews the diff and explicitly signs off. The "go ahead" is the gate.
 
 ### Human-in-the-Loop Split
 
 - **Agent** owns: check br, branch, claim, investigate, present investigation report, implement, test, quality gates, present handoff report
 - **Human** owns: review investigation report (approve approach), review diff + handoff (approve publish)
-- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to `golang-rewrite-experiment`, clean up branch
-- **When rewrite is stable with thorough tests**, the target branch changes to `main`
-
-### Pre-change Workflow (Direct Requests)
-
-For **direct requests** from the user or **work that isn't tracked**:
-
-1. **Check br for related work**: `br ready --json` and `br list --json`. If an existing issue covers the request, claim it. Otherwise create a new task.
-2. **Branch from `golang-rewrite-experiment` first, then claim on the branch:**
-   ```bash
-   git switch golang-rewrite-experiment
-   git switch -c feat/<short-description>
-   br update <id> --status in_progress --actor "$ACTOR" --json
-   git add .beads/ && git commit -m "chore(br): claim <id>"
-   ```
-3. **Investigate using MCP tools**
-4. **Present investigation report** — wait for approval
-5. **Implement, run quality gates, commit** with `Refs: <id>` footer
-6. **Present handoff report** — wait for explicit confirmation
-7. **After "go ahead", execute publish steps**
+- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to `main`, clean up branch, push to origin
 
 **Pausing a task (work not finished):**
 ```bash
@@ -173,11 +154,12 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
    ```
    The `--reason` must be a substantive summary, not git bookkeeping.
 
-8. **Fast-forward `golang-rewrite-experiment`:**
+8. **Fast-forward `main` and push:**
    ```bash
-   git rebase golang-rewrite-experiment
-   git switch golang-rewrite-experiment
+   git rebase main
+   git switch main
    git merge <feat-branch>   # fast-forward
+   git push origin main
    ```
 
 9. **Delete the local feature branch:**
@@ -187,12 +169,8 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
 
 **CRITICAL RULES:**
 - The agent **never** force-pushes (`--force` / `--force-with-lease`)
-- The agent **never** merges to `golang-rewrite-experiment` without explicit human confirmation
-- The agent **never** pushes to any remote
 - A "thanks" or "looks good" is **not** approval
 - If the agent hits a git state it can't recover from, it commits a `wip:` checkpoint and hands off
-
-> **Future**: Once the rewrite is stable with thorough and comprehensive tests, the target branch changes to `main` and pushing to `origin` becomes part of the flow.
 
 <!-- END BR INTEGRATION -->
 
@@ -210,7 +188,7 @@ make clean        # rm -rf bin/
 ## Architecture Overview
 
 - **Entry point**: `main.go` → `cmd.Execute()` (Cobra CLI)
-- **Commands**: `cmd/root.go` (flags), `cmd/deploy.go`, `cmd/destroy.go`
+- **Commands**: `cmd/root.go` (flags), `cmd/deploy.go`, `cmd/destroy.go`, `cmd/download.go`, `cmd/check.go`, `cmd/config.go`, `cmd/list.go`, `cmd/start.go`, `cmd/shutdown.go`, `cmd/stop.go`, `cmd/reboot.go`, `cmd/console.go`, `cmd/edit.go`, `cmd/ip.go`, `cmd/nuke.go`
 - **Packages** (`pkg/`):
   - `pkg/config/` — `~/.config/kdeploy.conf` key=value parser
   - `pkg/check/` — pre-flight checks (KVM, libvirt, disk space, SSH key)

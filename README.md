@@ -80,69 +80,87 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 
 ## Installation
 
+### Go Rewrite (Recommended)
+
 ```bash
-# Clone or download the script
+# Clone
 git clone https://github.com/hazembook/kdeploy.git
 cd kdeploy
 
-# Make executable
-chmod +x kdeploy
+# Build (requires Go 1.21+)
+make build
 
-# Run - first run will guide you through setup
-./kdeploy
+# Install globally
+cp bin/kdeploy ~/.local/bin/
+# or: make install  (not yet implemented)
 ```
 
-### Global Installation
+### Bash Script (Legacy)
 
-To run `kdeploy` from anywhere without `./` prefix:
+The original bash script `kdeploy` also ships in the repo root. It requires no build step.<br>
+*Note: all development is now focused on the Go version.*
 
-```bash
-mkdir -p ~/.local/bin
-cp kdeploy ~/.local/bin/kdeploy
-chmod +x ~/.local/bin/kdeploy
+## Commands
 
-# Add to PATH if needed (add to ~/.bashrc or ~/.zshrc)
-export PATH="$HOME/.local/bin:$PATH"
-
-# Now you can run from anywhere
-kdeploy myvm
-```
-
-## Usage
+### VM Lifecycle
 
 ```bash
-# Basic deployment (follow interactive prompts)
-./kdeploy myvm
+# Deploy a new VM (interactive)
+kdeploy deploy myvm
 
-# Fast deployment (skip all confirmations, ~14 seconds!)
-./kdeploy myvm -y
+# Fast deploy (skip all prompts)
+kdeploy deploy myvm -y
 
-# Specify disk size
-./kdeploy myvm 50G
-
-# Override resources
-./kdeploy myvm -r 4096 -c 4
-
-# Use custom paths (one-time override)
-./kdeploy myvm -i /path/to/images -s /path/to/storage
-
-# Fully non-interactive (custom paths + skip confirmations)
-./kdeploy myvm -i /path/to/images -s /path/to/storage -y
-
-# Use custom virtual network (must exist: virsh net-define / virsh net-start)
-./kdeploy myvm -n my-custom-network
+# Deploy with custom resources
+kdeploy deploy myvm 50G -r 4096 -c 4 -i /path/to/images -s /path/to/storage
 
 # Custom network with static MAC→IP mapping
-./kdeploy myvm -n "my-custom-network,mac=52:54:00:ab:cd:01"
+kdeploy deploy myvm -n "my-custom-network,mac=52:54:00:ab:cd:01"
 
-# Destroy a VM (quick teardown)
-./kdeploy destroy myvm
+# Destroy a VM (clean up files + SSH config)
+kdeploy destroy myvm
 
-# Reconfigure default paths
-./kdeploy --reconfig
+# Force-teardown (remove all storage, no file cleanup)
+kdeploy nuke myvm
+```
 
-# Show current configuration
-./kdeploy --show-config
+### VM Management (built-in virsh wrappers)
+
+```bash
+kdeploy list              # List all VMs
+kdeploy start myvm        # Start a stopped VM
+kdeploy shutdown myvm     # ACPI graceful shutdown
+kdeploy stop myvm         # Force power-off (virsh destroy)
+kdeploy reboot myvm       # Reboot
+kdeploy console myvm      # Interactive serial console
+kdeploy edit myvm         # Edit VM XML ($EDITOR)
+kdeploy ip myvm           # Show VM IP address
+```
+
+### Image Management
+
+```bash
+kdeploy download              # Interactive image picker
+kdeploy download --list       # List available images
+kdeploy download rocky10      # Download by key
+kdeploy download --url <url>  # Custom URL
+```
+
+### Configuration
+
+```bash
+kdeploy config init           # Create default config
+kdeploy config init --force   # Overwrite existing config
+kdeploy config show           # Display current config
+kdeploy --reconfig            # Shortcut for config init --force
+kdeploy --show-config         # Shortcut for config show
+```
+
+### System
+
+```bash
+kdeploy check              # Check dependencies
+kdeploy check --install    # Check + auto-install missing packages
 ```
 
 ## First Run Experience
@@ -272,69 +290,32 @@ sudo modprobe kvm_amd    # for AMD CPUs
 | Non-interactive (`-y`) | 14-18 sec | Fully automated |
 | GUI (Virt-Manager) | 15-30 min | Manual install |
 
-## Aliases Recommendation
+## Built-in Virsh Replacement
 
-Here are the aliases that I use to manage VMs efficiently (Left-Handed V-Set).
+The Go version has all these commands **built in** — no aliases needed:
 
-### Bash / Zsh
-
-Add these to your `~/.bashrc` or `~/.zshrc`:
-
-```bash
-## Virsh (Left-Handed V-Set)
-alias vv='virsh list --all'
-alias vs='virsh start'
-alias vq='virsh shutdown'
-alias vc='virsh console'
-alias vd='virsh destroy'
-alias vr='virsh reboot'
-alias ve='virsh edit'
-
-function va() {
-    virsh domifaddr "$1" | awk '/ipv4/ {print $4}' | cut -d/ -f1
-}
-
-function vxx() {
-    echo "Destroying and Undefining: $1"
-    virsh destroy "$1" 2>/dev/null
-    virsh undefine "$1" --remove-all-storage
-}
-```
-
-### Fish
-
-Add these to your `~/.config/fish/config.fish`:
-
-```fish
-## Virsh (Left-Handed V-Set)
-alias vv 'virsh list --all'
-alias vs 'virsh start'
-alias vq 'virsh shutdown'
-alias vc 'virsh console'
-alias vd 'virsh destroy'
-alias vr 'virsh reboot'
-alias ve 'virsh edit'
-function va; virsh domifaddr $argv[1] | awk '/ipv4/ {print $4}' | cut -d/ -f1; end
-function vxx 
-    echo "Destroying and Undefining: $argv[1]"
-    virsh destroy $argv[1] 2>/dev/null
-    virsh undefine $argv[1] --remove-all-storage
-end 
-```
+| Old alias | `kdeploy` command | What it does |
+|-----------|-------------------|--------------|
+| `vv` | `kdeploy list` | List all VMs |
+| `vs` | `kdeploy start` | Start a VM |
+| `vq` | `kdeploy shutdown` | ACPI graceful shutdown |
+| `vc` | `kdeploy console` | Serial console |
+| `vd` | `kdeploy stop` | Force power-off |
+| `vr` | `kdeploy reboot` | Reboot |
+| `ve` | `kdeploy edit` | Edit XML config |
+| `va` | `kdeploy ip` | Show VM IP |
+| `vxx` | `kdeploy nuke` | Destroy + remove all storage |
 
 ---
 
-## Roadmap: Go Rewrite
+## Roadmap
 
-A compiled Go (Golang) version of `kdeploy` is under development on the **`golang-rewrite-experiment`** branch.
-
-**Key goals:**
-- **Zero host dependencies**: Pure-Go ISO 9660 generation replaces `cloud-localds`
-- **Native libvirt integration**: Direct Unix socket binding replaces `virt-install`/`virsh`
-- **Concurrent deployments**: Multi-VM lab orchestration via goroutines
-- **Modern CLI**: Cobra + interactive prompts via terminal libraries
-
-See the [`golang-rewrite-experiment`](https://github.com/hazembook/kdeploy/tree/golang-rewrite-experiment) branch for progress.
+- ✅ **Go rewrite**: Full feature parity with the bash script
+- ✅ **Built-in virsh commands**: No more shell aliases needed
+- ✅ **Dependency management**: Auto-detect and install missing packages
+- ⬜ **Pure-Go ISO 9660**: Replace `cloud-localds` dependency
+- ⬜ **Native libvirt**: Direct Unix socket (`libvirt.so`) binding
+- ⬜ **Concurrent deploys**: Multi-VM lab orchestration via goroutines
 
 ---
 
