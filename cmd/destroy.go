@@ -2,7 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 
+	"github.com/hazembook/kdeploy/pkg/config"
+	"github.com/hazembook/kdeploy/pkg/hypervisor"
+	"github.com/hazembook/kdeploy/pkg/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -13,7 +19,33 @@ var destroyCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		fmt.Printf("🔥 Destroying VM: %s\n", name)
-		// TODO: wire up virsh destroy/undefine, file cleanup, SSH config removal
+
+		cfg, err := config.Load(cfgFile)
+		if err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+		storPath := cfg.StoragePath
+		if storagePath != "" {
+			storPath = storagePath
+		}
+
+		useSudo := hypervisor.NeedsSudo()
+
+		hypervisor.Destroy(name, useSudo)
+
+		removeFile := os.Remove
+		if useSudo {
+			removeFile = func(path string) error {
+				return exec.Command("sudo", "rm", "-f", path).Run()
+			}
+		}
+		removeFile(filepath.Join(storPath, name+".qcow2"))
+		removeFile(filepath.Join(storPath, name+"-seed.iso"))
+
+		incDir, _ := ssh.IncludeDir()
+		ssh.RemoveHostConfig(name, incDir)
+
+		fmt.Printf("✅ VM '%s' destroyed and cleaned up\n", name)
 		return nil
 	},
 }
