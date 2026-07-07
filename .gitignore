@@ -1,0 +1,10 @@
+# Go build artifacts
+kdeploy-go
+bin/
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
