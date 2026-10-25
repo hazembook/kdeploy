@@ -1,8 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -12,20 +11,22 @@ var listCmd = &cobra.Command{
 	Short: "List all VMs",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		u := ui.New()
 		useSudo := hypervisor.NeedsSudo()
 		entries, err := hypervisor.List(useSudo)
 		if err != nil {
 			return err
 		}
 		if len(entries) == 0 {
-			fmt.Println("No VMs found.")
+			u.Println("No VMs found.")
 			return nil
 		}
-		fmt.Printf("%-4s %-20s %s\n", "ID", "Name", "State")
-		fmt.Println("-----------------------------")
+
+		rows := make([][]string, 0, len(entries))
 		for _, e := range entries {
-			fmt.Printf("%-4s %-20s %s\n", e.ID, e.Name, e.State)
+			rows = append(rows, []string{e.ID, e.Name, e.State})
 		}
+		u.Table([]string{"ID", "Name", "State"}, rows)
 		return nil
 	},
 }

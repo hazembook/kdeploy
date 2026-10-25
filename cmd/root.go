@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"os"
 
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
 
@@ -34,9 +36,38 @@ using cloud-init enabled cloud images (qcow2 format).`,
 }
 
 func Execute(version string) {
-	rootCmd.Version = version
-	if err := rootCmd.Execute(); err != nil {
+	configureCommandGroups()
+	if err := fang.Execute(
+		context.Background(),
+		rootCmd,
+		fang.WithVersion(version),
+		fang.WithNotifySignal(os.Interrupt),
+		fang.WithoutCompletions(),
+		fang.WithoutManpage(),
+	); err != nil {
 		os.Exit(1)
+	}
+}
+
+func configureCommandGroups() {
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "vm", Title: "VM Lifecycle"},
+		&cobra.Group{ID: "inspect", Title: "Inspect"},
+		&cobra.Group{ID: "images", Title: "Images"},
+		&cobra.Group{ID: "config", Title: "Configuration"},
+	)
+
+	for _, command := range rootCmd.Commands() {
+		switch command.Name() {
+		case "deploy", "destroy", "start", "shutdown", "stop", "reboot":
+			command.GroupID = "vm"
+		case "list", "info", "ip", "console", "edit":
+			command.GroupID = "inspect"
+		case "download":
+			command.GroupID = "images"
+		case "config", "check":
+			command.GroupID = "config"
+		}
 	}
 }
 

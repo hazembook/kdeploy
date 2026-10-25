@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,8 @@ var getIPCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("ip lookup: %w", err)
 		}
-		fmt.Println(ip)
+		u := ui.New()
+		u.Println(ip)
 		return nil
 	},
 }

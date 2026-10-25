@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -12,58 +13,65 @@ var infoCmd = &cobra.Command{
 	Short: "Show detailed info for all VMs or a specific VM",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		u := ui.New()
 		useSudo := hypervisor.NeedsSudo()
 
 		if len(args) == 1 {
-			return showVMInfo(args[0], useSudo)
+			return showVMInfo(u, args[0], useSudo)
 		}
-		return showAllInfo(useSudo)
+		return showAllInfo(u, useSudo)
 	},
 }
 
-func showVMInfo(name string, useSudo bool) error {
-	ip, err := hypervisor.GetDomifaddr(name, useSudo)
-	if err != nil {
-		ip = "-"
-	}
-
+func showVMInfo(u *ui.UI, name string, useSudo bool) error {
 	entries, err := hypervisor.List(useSudo)
 	if err != nil {
 		return err
 	}
-	state := "-"
+
+	state := ""
 	for _, e := range entries {
 		if e.Name == name {
 			state = e.State
 			break
 		}
 	}
+	if state == "" {
+		return fmt.Errorf("VM %q not found", name)
+	}
 
-	fmt.Printf("Name:   %s\nState:  %s\nIP:     %s\n", name, state, ip)
+	ip := "-"
+	if state == "running" {
+		if value, err := hypervisor.GetDomifaddr(name, useSudo); err == nil {
+			ip = value
+		}
+	}
+
+	u.KV("Name", name, "State", state, "IP", ip)
 	return nil
 }
 
-func showAllInfo(useSudo bool) error {
+func showAllInfo(u *ui.UI, useSudo bool) error {
 	entries, err := hypervisor.List(useSudo)
 	if err != nil {
 		return err
 	}
 	if len(entries) == 0 {
-		fmt.Println("No VMs found.")
+		u.Println("No VMs found.")
 		return nil
 	}
 
-	fmt.Printf("%-20s %-12s %s\n", "Name", "State", "IP")
-	fmt.Println("------------------------------------------------")
+	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
 		ip := "-"
 		if e.State == "running" {
-			if v, err := hypervisor.GetDomifaddr(e.Name, useSudo); err == nil {
-				ip = v
+			if value, err := hypervisor.GetDomifaddr(e.Name, useSudo); err == nil {
+				ip = value
 			}
 		}
-		fmt.Printf("%-20s %-12s %s\n", e.Name, e.State, ip)
+		rows = append(rows, []string{e.Name, e.State, ip})
 	}
+	u.Table([]string{"Name", "State", "IP"}, rows)
 	return nil
 }
 
