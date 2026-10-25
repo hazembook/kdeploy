@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/check"
-	"github.com/hazembook/kdeploy/pkg/config"
 	"github.com/hazembook/kdeploy/pkg/detect"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/hazembook/kdeploy/pkg/iso"
@@ -94,10 +94,12 @@ var deployCmd = &cobra.Command{
 	Short: "Deploy a new VM",
 	Long: `Creates and boots a new KVM virtual machine from a cloud image.
 VM name is required. Optional disk size (default: 20G).`,
-	Args: cobra.MinimumNArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-		size := vmSize
+		u := ui.New()
+		if !u.CanPrompt() && !skipConfirm {
+			return fmt.Errorf("%w: deploy needs prompts; use --yes to accept defaults", ui.ErrNonInteractive)
+		}
 
 		var cleanupFiles []string
 		defer func() {
@@ -105,22 +107,34 @@ VM name is required. Optional disk size (default: 20G).`,
 				sudoRemove(f)
 			}
 		}()
-		if len(args) > 1 {
-			size = args[1]
-		}
 
-		// 1. Load config
-		cfg, err := config.Load(cfgFile)
+		// 1. Load config, or run first-run setup when interactive.
+		cfg, err := loadDeployConfig(cmd.Context(), u, effectiveConfigPath(), skipConfirm)
 		if err != nil {
 			return fmt.Errorf("config: %w", err)
 		}
-		imgPath := cfg.ImagePath
-		storPath := cfg.StoragePath
-		if imagePath != "" {
-			imgPath = imagePath
+
+		opts, err := ResolveDeployOptions(args, cfg, DeployFlagValues{
+			Size:        vmSize,
+			RAM:         vmRAM,
+			CPUs:        vmCPUs,
+			Network:     vmNetwork,
+			ImagePath:   imagePath,
+			StoragePath: storagePath,
+		})
+		if err != nil {
+			return err
 		}
-		if storagePath != "" {
-			storPath = storagePath
+
+		name := opts.Name
+		size := opts.Size
+		imgPath := opts.ImagePath
+		storPath := opts.StoragePath
+		if err := ensureDir(imgPath); err != nil {
+			return fmt.Errorf("image library: %w", err)
+		}
+		if err := ensureDir(storPath); err != nil {
+			return fmt.Errorf("VM storage: %w", err)
 		}
 
 		cmdSudo := hypervisor.NeedsSudo()                    // for virsh/virt-install
@@ -161,7 +175,7 @@ VM name is required. Optional disk size (default: 20G).`,
 		}
 
 		// 2c. Firewall rule for custom bridge networks
-		bridgeName := netName(vmNetwork)
+		bridgeName := netName(opts.Network)
 		if bridgeName != "default" {
 			fmt.Printf("   ⚙️  Configuring UFW for bridge %s...\n", bridgeName)
 			check.EnsureFirewallRule(bridgeName, cmdSudo)
@@ -189,10 +203,6 @@ VM name is required. Optional disk size (default: 20G).`,
 		if len(images) == 0 {
 			if !skipConfirm {
 				fmt.Println("   No images found — launching download prompt...")
-				imgPath = cfg.ImagePath
-				if imagePath != "" {
-					imgPath = imagePath
-				}
 				if err := setupImagePicker(imgPath); err != nil {
 					return err
 				}
@@ -213,17 +223,17 @@ VM name is required. Optional disk size (default: 20G).`,
 		fmt.Printf("📦 Selected image: %s (%s)\n", selected.Filename, selected.OS.OSVariant)
 
 		// 5. Interactive prompts (gated by --yes)
-		vmPass := cfg.DefaultPass
-		vmRAMVal := vmRAM
-		vmCPUsVal := vmCPUs
+		vmPass := opts.Password
+		vmRAMVal := opts.RAM
+		vmCPUsVal := opts.CPUs
 		var pkgList []string
 		if !skipConfirm {
-			promptPass := strings.TrimSpace(promptValue("🔑 VM password", vmPass))
+			promptPass := strings.TrimSpace(promptValue("🔑 VM password (blank keeps configured)", ""))
 			if promptPass != "" {
 				vmPass = promptPass
 			}
-			vmRAMVal = promptValue("   RAM (MB)", vmRAM)
-			vmCPUsVal = promptValue("   vCPUs", vmCPUs)
+			vmRAMVal = promptValue("   RAM (MB)", opts.RAM)
+			vmCPUsVal = promptValue("   vCPUs", opts.CPUs)
 			pkgChoice := promptValue("📦 Install packages? (space-separated, or 'none')", "none")
 			if pkgChoice != "" && !strings.EqualFold(pkgChoice, "none") {
 				for _, p := range strings.Fields(pkgChoice) {
@@ -272,7 +282,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			CPUs:      vmCPUsVal,
 			DiskPath:  overlayPath,
 			ISOPath:   seedPath,
-			Network:   vmNetwork,
+			Network:   opts.Network,
 			OSVariant: selected.OS.OSVariant,
 		}
 		if err := hypervisor.Deploy(vmCfg, cmdSudo); err != nil {
@@ -281,7 +291,7 @@ VM name is required. Optional disk size (default: 20G).`,
 
 		// 9. Wait for IP
 		fmt.Println("⏳ Waiting for IP address...")
-		ip, err := hypervisor.WaitForIP(name, netName(vmNetwork), cmdSudo, 90*time.Second)
+		ip, err := hypervisor.WaitForIP(name, netName(opts.Network), cmdSudo, 90*time.Second)
 		if err != nil {
 			return fmt.Errorf("ip discovery: %w", err)
 		}
@@ -314,6 +324,23 @@ VM name is required. Optional disk size (default: 20G).`,
 	},
 }
 
+func ensureDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("directory path is empty")
+	}
+	if err := os.MkdirAll(path, 0755); err == nil {
+		return nil
+	} else if !hypervisor.NeedsPrivilegedPath(path) {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+
+	out, err := exec.Command("sudo", "mkdir", "-p", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("create %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func readPubKey(keyPath string) string {
 	data, err := os.ReadFile(keyPath + ".pub")
 	if err != nil {
@@ -324,5 +351,5 @@ func readPubKey(keyPath string) string {
 
 func init() {
 	rootCmd.AddCommand(deployCmd)
-	deployCmd.Flags().StringVarP(&vmSize, "size", "d", "20G", "Disk size (e.g. 20G, 50G)")
+	deployCmd.Flags().StringVarP(&vmSize, "size", "d", "", "Disk size (e.g. 20G, 50G; default: config or 20G)")
 }

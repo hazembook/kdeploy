@@ -33,6 +33,21 @@ func TestNewPlainMode(t *testing.T) {
 	}
 }
 
+func TestInteractivePromptWithPipedOutputIsPlain(t *testing.T) {
+	u := NewWithOptions(Options{
+		Out:         &bytes.Buffer{},
+		Err:         &bytes.Buffer{},
+		Interactive: boolPtr(true),
+		Env:         []string{"TERM=xterm-256color"},
+	})
+	if !u.Interactive {
+		t.Fatal("forced interactive UI was not interactive")
+	}
+	if !u.Plain {
+		t.Fatal("piped stdout should force plain output even when prompts are available")
+	}
+}
+
 func TestTablePlainNoANSI(t *testing.T) {
 	var out bytes.Buffer
 	u := NewWithOptions(Options{

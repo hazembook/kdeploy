@@ -29,11 +29,45 @@ func DefaultConfig() *Config {
 	}
 }
 
+// DefaultPath returns the historical config location:
+// ~/.config/kdeploy.conf.
+func DefaultPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".config", "kdeploy.conf")
+	}
+	return filepath.Join(home, ".config", "kdeploy.conf")
+}
+
+// ExpandPath expands a leading ~ or ~/ using the current user's home.
+func ExpandPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+	}
+	return path
+}
+
+// Exists reports whether path exists. An empty path means the default.
+func Exists(path string) bool {
+	path = ExpandPath(path)
+	if path == "" {
+		path = DefaultPath()
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
+	path = ExpandPath(path)
 	if path == "" {
-		home, _ := os.UserHomeDir()
-		path = filepath.Join(home, ".config", "kdeploy.conf")
+		path = DefaultPath()
 	}
 
 	f, err := os.Open(path)
@@ -59,9 +93,9 @@ func Load(path string) (*Config, error) {
 		val := strings.TrimSpace(parts[1])
 		switch key {
 		case "IMAGE_PATH":
-			cfg.ImagePath = val
+			cfg.ImagePath = ExpandPath(val)
 		case "STORAGE_PATH":
-			cfg.StoragePath = val
+			cfg.StoragePath = ExpandPath(val)
 		case "DEFAULT_VM_SIZE":
 			cfg.DefaultSize = val
 		case "DEFAULT_RAM":
@@ -72,18 +106,34 @@ func Load(path string) (*Config, error) {
 			cfg.DefaultPass = val
 		}
 	}
-	return cfg, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	return cfg, nil
 }
 
 func Save(cfg *Config) error {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".config", "kdeploy.conf")
+	return SaveTo(cfg, DefaultPath())
+}
+
+// SaveTo atomically writes a config file with mode 0600.
+func SaveTo(cfg *Config, path string) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	path = ExpandPath(path)
+	if path == "" {
+		path = DefaultPath()
+	}
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("mkdir config dir: %w", err)
 	}
 
+	out := *cfg
+	out.ImagePath = ExpandPath(out.ImagePath)
+	out.StoragePath = ExpandPath(out.StoragePath)
 	content := fmt.Sprintf(`# kdeploy configuration
 IMAGE_PATH=%s
 STORAGE_PATH=%s
@@ -91,8 +141,29 @@ DEFAULT_VM_SIZE=%s
 DEFAULT_RAM=%s
 DEFAULT_CPUS=%s
 DEFAULT_PASSWORD=%s
-`, cfg.ImagePath, cfg.StoragePath, cfg.DefaultSize,
-		cfg.DefaultRAM, cfg.DefaultCPUs, cfg.DefaultPass)
+`, out.ImagePath, out.StoragePath, out.DefaultSize,
+		out.DefaultRAM, out.DefaultCPUs, out.DefaultPass)
 
-	return os.WriteFile(path, []byte(content), 0600)
+	tmp, err := os.CreateTemp(dir, ".kdeploy-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create config temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod config temp: %w", err)
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write config temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close config temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	return nil
 }

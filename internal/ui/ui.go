@@ -96,7 +96,11 @@ func NewWithOptions(opts Options) *UI {
 		width = 80
 	}
 
-	plain := !interactive || strings.EqualFold(envValue(env, "TERM"), "dumb")
+	outputTTY := false
+	if file, ok := out.(*os.File); ok && term.IsTerminal(file.Fd()) {
+		outputTTY = true
+	}
+	plain := !outputTTY || strings.EqualFold(envValue(env, "TERM"), "dumb")
 	noColor := plain || envValue(env, "NO_COLOR") != ""
 
 	return &UI{
