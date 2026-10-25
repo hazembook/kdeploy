@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -136,31 +139,48 @@ func pickAndDownload(catalog []catalogEntry, imgPath string, useSudo bool) error
 }
 
 func downloadFile(url, destDir string, useSudo bool) error {
-	filename := filepath.Base(url)
+	return downloadFileWithOptions(url, destDir, useSudo, false)
+}
+
+// downloadFileWithOptions downloads rawURL into destDir. When overwrite is
+// false an existing file asks for confirmation; when true the caller has
+// already confirmed and the old file is removed before the download.
+func downloadFileWithOptions(rawURL, destDir string, useSudo, overwrite bool) error {
+	filename, err := imageFilenameFromURL(rawURL)
+	if err != nil {
+		return err
+	}
 	dest := filepath.Join(destDir, filename)
 
 	if _, err := os.Stat(dest); err == nil {
-		overwrite := promptValue(fmt.Sprintf("📥 %s already exists, overwrite?", filename), "n")
-		if !strings.EqualFold(overwrite, "y") {
-			fmt.Println("   Skipped.")
-			return nil
+		if !overwrite {
+			choice := promptValue(fmt.Sprintf("%s already exists, overwrite?", filename), "n")
+			if !strings.EqualFold(choice, "y") {
+				fmt.Fprintln(os.Stderr, "   Skipped.")
+				return nil
+			}
 		}
+		if err := removeDownloadFile(dest, useSudo); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect %s: %w", dest, err)
 	}
 
-	fmt.Printf("📥 Downloading: %s\n", filename)
-	fmt.Printf("   From: %s\n", url)
-	fmt.Printf("   To:   %s\n", dest)
+	fmt.Fprintf(os.Stderr, "Downloading: %s\n", filename)
+	fmt.Fprintf(os.Stderr, "   From: %s\n", rawURL)
+	fmt.Fprintf(os.Stderr, "   To:   %s\n", dest)
 
 	var cmd *exec.Cmd
 	if commandExists("wget") {
-		args := []string{"wget", "-c", "--progress=bar:force", url, "-O", dest}
+		args := []string{"wget", "-c", "--progress=bar:force", rawURL, "-O", dest}
 		if useSudo {
 			cmd = exec.Command("sudo", args...)
 		} else {
 			cmd = exec.Command(args[0], args[1:]...)
 		}
 	} else if commandExists("curl") {
-		args := []string{"curl", "-L", "-C", "-", "--progress-bar", url, "-o", dest}
+		args := []string{"curl", "-L", "-C", "-", "--progress-bar", rawURL, "-o", dest}
 		if useSudo {
 			cmd = exec.Command("sudo", args...)
 		} else {
@@ -170,7 +190,7 @@ func downloadFile(url, destDir string, useSudo bool) error {
 		return fmt.Errorf("neither wget nor curl found — install one to download images")
 	}
 
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("download failed: %w", err)
@@ -182,13 +202,63 @@ func downloadFile(url, destDir string, useSudo bool) error {
 		os.Chmod(dest, 0644)
 	}
 
-	fmt.Println("   ✅ Download complete.")
+	fmt.Fprintln(os.Stderr, "   Download complete.")
+	return nil
+}
+
+func imageFilenameFromURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("image URL must be an http or https URL: %q", rawURL)
+	}
+	filename := path.Base(parsed.Path)
+	if filename == "" || filename == "." || filename == "/" {
+		return "", fmt.Errorf("image URL must include a filename: %q", rawURL)
+	}
+	if unescaped, err := url.PathUnescape(filename); err == nil {
+		filename = unescaped
+	}
+	return filename, nil
+}
+
+func removeDownloadFile(path string, useSudo bool) error {
+	if useSudo {
+		out, err := exec.Command("sudo", "rm", "-f", path).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("remove %s: %w: %s", path, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", path, err)
+	}
 	return nil
 }
 
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// promptValue and confirmPrompt are the legacy line prompts still used by
+// download/check until their Phase 4 rewrites.
+func promptValue(prompt, defaultVal string) string {
+	fmt.Fprintf(os.Stderr, "%s [%s]: ", prompt, defaultVal)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	val := strings.TrimSpace(scanner.Text())
+	if val == "" {
+		return defaultVal
+	}
+	return val
+}
+
+func confirmPrompt(msg string) bool {
+	fmt.Fprintf(os.Stderr, "   %s [Y/n] ", msg)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	answer := strings.TrimSpace(scanner.Text())
+	return answer == "" || strings.EqualFold(answer, "y")
 }
 
 func init() {

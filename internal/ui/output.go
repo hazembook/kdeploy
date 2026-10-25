@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
+
+	"charm.land/lipgloss/v2"
 )
 
 // Heading prints a primary result heading to stdout.
@@ -60,6 +62,11 @@ func (u *UI) Status(format string, args ...any) {
 	u.status(u.Theme.Accent.Render(u.Symbols.Arrow), format, args...)
 }
 
+// Failure prints a failure status to stderr.
+func (u *UI) Failure(format string, args ...any) {
+	u.status(u.Theme.Error.Render(u.Symbols.Failure), format, args...)
+}
+
 // Muted prints a secondary line to stderr.
 func (u *UI) Muted(format string, args ...any) {
 	fmt.Fprintln(u.Err, u.Theme.Muted.Render(fmt.Sprintf(format, args...)))
@@ -87,4 +94,50 @@ func (u *UI) PlainTable(out io.Writer, headers []string, rows [][]string) {
 		_, _ = fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
 	_ = w.Flush()
+}
+
+// Panel prints a bordered key/value panel to stderr. It is used for review
+// screens and other interactive summaries.
+func (u *UI) Panel(title string, pairs ...string) {
+	if len(pairs)%2 != 0 {
+		pairs = append(pairs, "")
+	}
+	labelWidth := 0
+	for i := 0; i < len(pairs); i += 2 {
+		if width := len(pairs[i]); width > labelWidth {
+			labelWidth = width
+		}
+	}
+
+	if u.Plain {
+		fmt.Fprintln(u.Err, title)
+		for i := 0; i < len(pairs); i += 2 {
+			fmt.Fprintf(u.Err, "  %-*s  %s\n", labelWidth+1, pairs[i]+":", pairs[i+1])
+		}
+		return
+	}
+
+	var body strings.Builder
+	for i := 0; i < len(pairs); i += 2 {
+		label := pairs[i] + ":"
+		fmt.Fprintf(&body, "%s  %s\n",
+			u.Theme.Label.Render(fmt.Sprintf("%-*s", labelWidth+1, label)),
+			pairs[i+1],
+		)
+	}
+
+	width := u.Width
+	if width > 100 {
+		width = 100
+	}
+	if width < 20 {
+		width = 20
+	}
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#6B7280")).
+		Padding(0, 1).
+		Width(width - 4)
+	fmt.Fprintln(u.Err, u.Theme.Title.Render(title))
+	fmt.Fprintln(u.Err, box.Render(strings.TrimRight(body.String(), "\n")))
 }

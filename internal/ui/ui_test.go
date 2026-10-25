@@ -107,6 +107,27 @@ func TestKV(t *testing.T) {
 	}
 }
 
+func TestPanelPlainGoesToStderr(t *testing.T) {
+	var out, errOut bytes.Buffer
+	u := NewWithOptions(Options{
+		Out:         &out,
+		Err:         &errOut,
+		Interactive: boolPtr(false),
+		Env:         []string{"TERM=dumb"},
+	})
+	u.Panel("Review", "Name", "demo", "Network", "default")
+	got := errOut.String()
+	if !strings.Contains(got, "Review") || !strings.Contains(got, "Name:") || !strings.Contains(got, "demo") {
+		t.Fatalf("unexpected panel output: %q", got)
+	}
+	if strings.Contains(got, "\x1b[") {
+		t.Fatalf("plain panel contains ANSI: %q", got)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("panel wrote to stdout: %q", out.String())
+	}
+}
+
 func TestMaskSecret(t *testing.T) {
 	u := NewWithOptions(Options{Interactive: boolPtr(false)})
 	if got := u.MaskSecret(""); got != "" {
