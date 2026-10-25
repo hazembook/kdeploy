@@ -7,12 +7,12 @@ import (
 )
 
 type CloudInitData struct {
-	Hostname      string
-	InstanceID    string
-	SSHPublicKey  string
-	PasswordHash  string
-	Username      string
-	Packages      []string
+	Hostname     string
+	InstanceID   string
+	SSHPublicKey string
+	PasswordHash string
+	Username     string
+	Packages     []string
 }
 
 func GenerateSeedISO(data *CloudInitData, outputPath string, useSudo bool) error {

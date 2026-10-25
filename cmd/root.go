@@ -33,9 +33,9 @@ using cloud-init enabled cloud images (qcow2 format).`,
 	},
 }
 
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+func Execute(version string) {
+	rootCmd.Version = version
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

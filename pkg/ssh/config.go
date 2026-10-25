@@ -84,4 +84,3 @@ func WaitForSSH(ip string, timeout time.Duration) error {
 	}
 	return fmt.Errorf("SSH not reachable at %s:22 after %v", ip, timeout)
 }
-

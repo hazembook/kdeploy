@@ -123,7 +123,7 @@ VM name is required. Optional disk size (default: 20G).`,
 			storPath = storagePath
 		}
 
-		cmdSudo := hypervisor.NeedsSudo()                  // for virsh/virt-install
+		cmdSudo := hypervisor.NeedsSudo()                    // for virsh/virt-install
 		fileSudo := hypervisor.NeedsPrivilegedPath(storPath) // for qemu-img, cloud-localds, rm
 
 		// 2. Pre-flight checks
@@ -238,12 +238,12 @@ VM name is required. Optional disk size (default: 20G).`,
 
 		// 6. Generate cloud-init ISO
 		cloudData := &iso.CloudInitData{
-			Hostname:      name,
-			InstanceID:    fmt.Sprintf("%s-%d", name, time.Now().Unix()),
-			SSHPublicKey:  readPubKey(keyPath),
-			PasswordHash:  hash,
-			Username:      os.Getenv("USER"),
-			Packages:      pkgList,
+			Hostname:     name,
+			InstanceID:   fmt.Sprintf("%s-%d", name, time.Now().Unix()),
+			SSHPublicKey: readPubKey(keyPath),
+			PasswordHash: hash,
+			Username:     os.Getenv("USER"),
+			Packages:     pkgList,
 		}
 		seedPath := filepath.Join(storPath, name+"-seed.iso")
 		cleanupFiles = append(cleanupFiles, seedPath)

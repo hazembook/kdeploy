@@ -8,19 +8,19 @@ func TestGetIPFromOutput(t *testing.T) {
 		expect string
 	}{
 		{
-			input: `  vnet0     00:11:22:33:44:55  ipv4   192.168.122.100/24  -`,
+			input:  `  vnet0     00:11:22:33:44:55  ipv4   192.168.122.100/24  -`,
 			expect: "192.168.122.100",
 		},
 		{
-			input: `  vnet0     00:11:22:33:44:55  ipv4   127.0.0.1/8  -`,
+			input:  `  vnet0     00:11:22:33:44:55  ipv4   127.0.0.1/8  -`,
 			expect: "",
 		},
 		{
-			input: `  vnet0     00:11:22:33:44:55  ipv4   10.0.0.5/24  -`,
+			input:  `  vnet0     00:11:22:33:44:55  ipv4   10.0.0.5/24  -`,
 			expect: "10.0.0.5",
 		},
 		{
-			input: `no addresses found`,
+			input:  `no addresses found`,
 			expect: "",
 		},
 	}

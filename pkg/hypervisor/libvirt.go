@@ -8,13 +8,13 @@ import (
 )
 
 type VMConfig struct {
-	Name       string
-	RAM        string
-	CPUs       string
-	DiskPath   string
-	ISOPath    string
-	Network    string
-	OSVariant  string
+	Name      string
+	RAM       string
+	CPUs      string
+	DiskPath  string
+	ISOPath   string
+	Network   string
+	OSVariant string
 }
 
 func Deploy(cfg *VMConfig, useSudo bool) error {

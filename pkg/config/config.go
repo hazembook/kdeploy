@@ -9,12 +9,12 @@ import (
 )
 
 type Config struct {
-	ImagePath     string
-	StoragePath   string
-	DefaultSize   string
-	DefaultRAM    string
-	DefaultCPUs   string
-	DefaultPass   string
+	ImagePath   string
+	StoragePath string
+	DefaultSize string
+	DefaultRAM  string
+	DefaultCPUs string
+	DefaultPass string
 }
 
 func DefaultConfig() *Config {
