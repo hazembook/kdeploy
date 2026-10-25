@@ -1,5 +1,7 @@
 # Database
 *.db
+*.db-*
+*.db.*
 *.db-journal
 *.db-shm
 *.db-wal
