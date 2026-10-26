@@ -358,7 +358,7 @@ func InstallDependencies(distro, pkgManager string) error {
 		cmd.Args = append(cmd.Args, strings.Fields(pkgs)...)
 	case "apt":
 		cmd = exec.Command("sudo", "apt", "update")
-		cmd.Stdout = os.Stdout
+		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("apt update: %w", err)
@@ -370,18 +370,10 @@ func InstallDependencies(distro, pkgManager string) error {
 		cmd.Args = append(cmd.Args, strings.Fields(pkgs)...)
 	}
 
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("install failed: %w", err)
-	}
-
-	// Re-check after install
-	missing := RequiredTools()
-	for _, r := range missing {
-		if !r.Passed {
-			return fmt.Errorf("some tools still missing after install: %s", r.Error)
-		}
 	}
 	return nil
 }

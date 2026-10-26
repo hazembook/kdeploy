@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -13,12 +14,12 @@ var startCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		useSudo := hypervisor.NeedsSudo()
-		fmt.Printf("▶️  Starting VM: %s\n", name)
-		if err := hypervisor.VMStart(name, useSudo); err != nil {
-			return err
+		u := ui.New()
+		u.Status("Starting VM %q", name)
+		if err := hypervisor.VMStart(name, hypervisor.NeedsSudo()); err != nil {
+			return fmt.Errorf("start %s: %w", name, err)
 		}
-		fmt.Printf("✅ VM '%s' started\n", name)
+		u.Success("VM %q started", name)
 		return nil
 	},
 }

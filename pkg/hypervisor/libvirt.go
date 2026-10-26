@@ -51,13 +51,15 @@ func Destroy(name string, useSudo bool) error {
 		prefix = []string{"sudo"}
 	}
 
-	cmds := [][]string{
-		append(prefix, "virsh", "destroy", name),
-		append(prefix, "virsh", "undefine", name, "--remove-all-storage"),
-	}
-	for _, args := range cmds {
-		cmd := exec.Command(args[0], args[1:]...)
-		_ = cmd.Run() // best-effort
+	// Stopping an already-stopped domain is expected to fail; continue to
+	// undefine it. The undefine result is reported if the VM remains.
+	virshArgs := append(prefix, "virsh", "destroy", name)
+	_ = exec.Command(virshArgs[0], virshArgs[1:]...).Run()
+
+	undefineArgs := append(prefix, "virsh", "undefine", name, "--remove-all-storage")
+	out, err := exec.Command(undefineArgs[0], undefineArgs[1:]...).CombinedOutput()
+	if err != nil && VMExists(name, useSudo) {
+		return fmt.Errorf("virsh undefine: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -153,10 +155,13 @@ func VMConsole(name string, useSudo bool) error {
 		args = append([]string{"sudo"}, args...)
 	}
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdin = nil
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("virsh console: %w", err)
+	}
+	return nil
 }
 
 func VMEdit(name string, useSudo bool) error {
@@ -168,7 +173,10 @@ func VMEdit(name string, useSudo bool) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("virsh edit: %w", err)
+	}
+	return nil
 }
 
 func VMExists(name string, useSudo bool) bool {

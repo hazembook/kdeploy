@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -13,12 +14,12 @@ var stopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		useSudo := hypervisor.NeedsSudo()
-		fmt.Printf("⏹  Force-stopping VM: %s\n", name)
-		if err := hypervisor.VMStop(name, useSudo); err != nil {
-			return err
+		u := ui.New()
+		u.Status("Force-stopping VM %q", name)
+		if err := hypervisor.VMStop(name, hypervisor.NeedsSudo()); err != nil {
+			return fmt.Errorf("stop %s: %w", name, err)
 		}
-		fmt.Printf("✅ VM '%s' stopped\n", name)
+		u.Success("VM %q stopped", name)
 		return nil
 	},
 }

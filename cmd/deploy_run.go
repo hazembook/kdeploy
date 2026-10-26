@@ -89,11 +89,24 @@ func executeDeploy(ctx context.Context, u *ui.UI, opts DeployOptions, image dete
 
 	if hypervisor.VMExists(opts.Name, cmdSudo) {
 		u.Status("Replacing existing VM %q", opts.Name)
-		hypervisor.Destroy(opts.Name, cmdSudo)
-		sudoRemove(filepath.Join(opts.StoragePath, opts.Name+".qcow2"))
-		sudoRemove(filepath.Join(opts.StoragePath, opts.Name+"-seed.iso"))
+		if err := hypervisor.Destroy(opts.Name, cmdSudo); err != nil {
+			return fmt.Errorf("replace existing VM: %w", err)
+		}
+		if hypervisor.VMExists(opts.Name, cmdSudo) {
+			return fmt.Errorf("VM %q still exists after virsh undefine", opts.Name)
+		}
+		for _, path := range []string{
+			filepath.Join(opts.StoragePath, opts.Name+".qcow2"),
+			filepath.Join(opts.StoragePath, opts.Name+"-seed.iso"),
+		} {
+			if err := sudoRemove(path); err != nil {
+				return err
+			}
+		}
 		if includeDir, err := ssh.IncludeDir(); err == nil {
-			ssh.RemoveHostConfig(opts.Name, includeDir)
+			if err := ssh.RemoveHostConfig(opts.Name, includeDir); err != nil {
+				return err
+			}
 		}
 	}
 

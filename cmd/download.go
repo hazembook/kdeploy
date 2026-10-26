@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 
+	"charm.land/huh/v2"
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/config"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
@@ -54,116 +56,189 @@ Available keys: rocky10, rocky9, rocky8, ubuntu2404, ubuntu2204,
 ubuntu2004, debian13, debian12, debian11
 
 Use --url to download from a custom URL, or pass a key/URL as an argument.
-Run without arguments for an interactive picker.`,
+Run without arguments for an interactive picker. --yes requires a key or URL.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		u := ui.New()
 		listFlag, _ := cmd.Flags().GetBool("list")
 		urlFlag, _ := cmd.Flags().GetString("url")
 
 		if listFlag {
-			printCatalog()
+			renderDownloadCatalog(u)
 			return nil
+		}
+
+		if len(args) == 0 && urlFlag == "" {
+			if skipConfirm {
+				return fmt.Errorf("download --yes needs an image key or URL; run `kdeploy download --list` to see available images")
+			}
+			if !u.CanPrompt() {
+				return fmt.Errorf("%w: pass an image key or URL, or use --list", ui.ErrNonInteractive)
+			}
 		}
 
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return fmt.Errorf("config: %w", err)
 		}
-		imgPath := cfg.ImagePath
+		imgPath := config.ExpandPath(cfg.ImagePath)
 		if imagePath != "" {
-			imgPath = imagePath
+			imgPath = config.ExpandPath(imagePath)
 		}
-		os.MkdirAll(imgPath, 0755)
+		if err := ensureDir(imgPath); err != nil {
+			return fmt.Errorf("image library: %w", err)
+		}
 		useSudo := hypervisor.NeedsPrivilegedPath(imgPath)
 
 		catalog := buildCatalog()
-		var entry *catalogEntry
-		var customURL string
-
-		if len(args) == 1 {
-			arg := args[0]
-			if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
-				customURL = arg
-			} else {
-				for i := range catalog {
-					if catalog[i].Key == arg {
-						entry = &catalog[i]
-						break
-					}
-				}
-				if entry == nil {
-					fmt.Printf("Unknown key %q. Available:\n", arg)
-					printCatalog()
-					return nil
-				}
+		var rawURL string
+		switch {
+		case len(args) == 1:
+			rawURL, err = resolveDownloadArg(catalog, args[0])
+			if err != nil {
+				return err
 			}
-		} else if urlFlag != "" {
-			customURL = urlFlag
-		} else {
-			return pickAndDownload(catalog, imgPath, useSudo)
+		case urlFlag != "":
+			rawURL = strings.TrimSpace(urlFlag)
+		default:
+			rawURL, err = pickDownloadImage(cmd.Context(), u, catalog)
+			if err != nil {
+				return err
+			}
+		}
+		rawURL = strings.TrimSpace(rawURL)
+
+		filename, err := imageFilenameFromURL(rawURL)
+		if err != nil {
+			return err
+		}
+		dest := filepath.Join(imgPath, filename)
+		if _, err := confirmDownloadOverwrite(cmd.Context(), u, dest, filename); err != nil {
+			return err
+		}
+		if err := downloadFileWithOptions(rawURL, imgPath, useSudo); err != nil {
+			return err
 		}
 
-		if entry != nil {
-			return downloadFile(entry.URL, imgPath, useSudo)
-		}
-		return downloadFile(customURL, imgPath, useSudo)
+		u.KV("Downloaded", dest)
+		return nil
 	},
 }
 
-func printCatalog() {
-	fmt.Println("Available images:")
-	for _, e := range buildCatalog() {
-		fmt.Printf("  %-14s %s\n", e.Key, e.Name)
+func renderDownloadCatalog(u *ui.UI) {
+	entries := buildCatalog()
+	rows := make([][]string, 0, len(entries))
+	for _, entry := range entries {
+		rows = append(rows, []string{entry.Key, entry.Name})
 	}
+	u.Heading("Available images")
+	u.Table([]string{"Key", "Image"}, rows)
 }
 
-func pickAndDownload(catalog []catalogEntry, imgPath string, useSudo bool) error {
-	fmt.Println("Available images:")
-	for i, e := range catalog {
-		fmt.Printf("  %2d) %-14s %s\n", i+1, e.Key, e.Name)
+func resolveDownloadArg(catalog []catalogEntry, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if strings.Contains(value, "://") {
+		return value, nil
 	}
-	fmt.Printf("  %2d) Custom URL\n", len(catalog)+1)
-	choice := promptValue("Select image", "1")
-	var idx int
-	if _, err := fmt.Sscanf(choice, "%d", &idx); err != nil || idx < 1 || idx > len(catalog)+1 {
-		return fmt.Errorf("invalid selection")
-	}
-	if idx == len(catalog)+1 {
-		url := promptValue("Enter URL", "")
-		if url == "" {
-			return fmt.Errorf("no URL provided")
+	for _, entry := range catalog {
+		if entry.Key == value {
+			return entry.URL, nil
 		}
-		return downloadFile(url, imgPath, useSudo)
 	}
-	return downloadFile(catalog[idx-1].URL, imgPath, useSudo)
+	return "", fmt.Errorf("unknown image key %q; run `kdeploy download --list` to see available images", value)
 }
 
-func downloadFile(url, destDir string, useSudo bool) error {
-	return downloadFileWithOptions(url, destDir, useSudo, false)
+func pickDownloadImage(ctx context.Context, u *ui.UI, catalog []catalogEntry) (string, error) {
+	if len(catalog) == 0 {
+		return "", fmt.Errorf("no catalog images available")
+	}
+
+	choice := catalog[0].Key
+	options := make([]huh.Option[string], 0, len(catalog)+1)
+	for _, entry := range catalog {
+		options = append(options, huh.NewOption(
+			fmt.Sprintf("%s  (%s)", entry.Name, entry.Key),
+			entry.Key,
+		))
+	}
+	options = append(options, huh.NewOption("Custom URL…", customDownloadChoice))
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Download a cloud image").
+				Description("Choose a catalog image or enter a custom URL.").
+				Options(options...).
+				Value(&choice).
+				Height(12),
+		).Title("Catalog"),
+	)
+	if err := u.RunForm(ctx, form); err != nil {
+		return "", err
+	}
+
+	if choice != customDownloadChoice {
+		for _, entry := range catalog {
+			if entry.Key == choice {
+				return entry.URL, nil
+			}
+		}
+		return "", fmt.Errorf("unknown catalog image %q", choice)
+	}
+
+	var rawURL string
+	form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Image URL").
+				Description("An http or https URL to a .qcow2 or .img file.").
+				Value(&rawURL).
+				Validate(func(value string) error {
+					_, err := imageFilenameFromURL(value)
+					return err
+				}),
+		),
+	)
+	if err := u.RunForm(ctx, form); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(rawURL), nil
 }
 
-// downloadFileWithOptions downloads rawURL into destDir. When overwrite is
-// false an existing file asks for confirmation; when true the caller has
-// already confirmed and the old file is removed before the download.
-func downloadFileWithOptions(rawURL, destDir string, useSudo, overwrite bool) error {
+func confirmDownloadOverwrite(ctx context.Context, u *ui.UI, dest, filename string) (bool, error) {
+	if _, err := os.Stat(dest); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect %s: %w", dest, err)
+	}
+	if skipConfirm {
+		return true, nil
+	}
+	if !u.CanPrompt() {
+		return false, fmt.Errorf("%w: %s already exists; use --yes to overwrite", ui.ErrNonInteractive, filename)
+	}
+
+	overwrite := false
+	if err := u.Confirm(ctx, fmt.Sprintf("%s already exists. Overwrite?", filename), &overwrite); err != nil {
+		return false, err
+	}
+	if !overwrite {
+		return false, fmt.Errorf("download cancelled")
+	}
+	return true, nil
+}
+
+// downloadFileWithOptions downloads rawURL into destDir. Callers decide the
+// overwrite policy first; the native downloader keeps its resume behavior.
+func downloadFileWithOptions(rawURL, destDir string, useSudo bool) error {
+	rawURL = strings.TrimSpace(rawURL)
 	filename, err := imageFilenameFromURL(rawURL)
 	if err != nil {
 		return err
 	}
 	dest := filepath.Join(destDir, filename)
-
-	if _, err := os.Stat(dest); err == nil {
-		if !overwrite {
-			choice := promptValue(fmt.Sprintf("%s already exists, overwrite?", filename), "n")
-			if !strings.EqualFold(choice, "y") {
-				fmt.Fprintln(os.Stderr, "   Skipped.")
-				return nil
-			}
-		}
-		if err := removeDownloadFile(dest, useSudo); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
+	if _, err := os.Stat(dest); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("inspect %s: %w", dest, err)
 	}
 
@@ -211,54 +286,27 @@ func imageFilenameFromURL(rawURL string) (string, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return "", fmt.Errorf("image URL must be an http or https URL: %q", rawURL)
 	}
-	filename := path.Base(parsed.Path)
+	filename := path.Base(parsed.EscapedPath())
 	if filename == "" || filename == "." || filename == "/" {
 		return "", fmt.Errorf("image URL must include a filename: %q", rawURL)
 	}
-	if unescaped, err := url.PathUnescape(filename); err == nil {
-		filename = unescaped
+	unescaped, err := url.PathUnescape(filename)
+	if err != nil {
+		return "", fmt.Errorf("image URL contains an invalid filename: %q", rawURL)
+	}
+	filename = unescaped
+	if filename == "" || filename == "." || filename == ".." || strings.ContainsAny(filename, `/\`) {
+		return "", fmt.Errorf("image URL must include a plain filename: %q", rawURL)
+	}
+	if strings.ContainsRune(filename, 0) {
+		return "", fmt.Errorf("image URL must include a plain filename: %q", rawURL)
 	}
 	return filename, nil
-}
-
-func removeDownloadFile(path string, useSudo bool) error {
-	if useSudo {
-		out, err := exec.Command("sudo", "rm", "-f", path).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("remove %s: %w: %s", path, err, strings.TrimSpace(string(out)))
-		}
-		return nil
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove %s: %w", path, err)
-	}
-	return nil
 }
 
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-// promptValue and confirmPrompt are the legacy line prompts still used by
-// download/check until their Phase 4 rewrites.
-func promptValue(prompt, defaultVal string) string {
-	fmt.Fprintf(os.Stderr, "%s [%s]: ", prompt, defaultVal)
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	val := strings.TrimSpace(scanner.Text())
-	if val == "" {
-		return defaultVal
-	}
-	return val
-}
-
-func confirmPrompt(msg string) bool {
-	fmt.Fprintf(os.Stderr, "   %s [Y/n] ", msg)
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	answer := strings.TrimSpace(scanner.Text())
-	return answer == "" || strings.EqualFold(answer, "y")
 }
 
 func init() {

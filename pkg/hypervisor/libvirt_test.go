@@ -1,6 +1,10 @@
 package hypervisor
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestGetIPFromOutput(t *testing.T) {
 	tests := []struct {
@@ -58,5 +62,49 @@ func TestExtractIP(t *testing.T) {
 func TestExtractIP_NotFound(t *testing.T) {
 	if ip := extractIP("no matching leases", "aa:bb:cc:dd:ee:ff"); ip != "" {
 		t.Errorf("expected empty, got %q", ip)
+	}
+}
+
+func TestDestroyReportsFailureWhenVMStillExists(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(dir, "exists")
+	fail := filepath.Join(dir, "fail")
+	if err := os.WriteFile(state, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fail, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+case "$*" in
+  "dominfo demo") [ -f "` + state + `" ] && exit 0 || exit 1 ;;
+  "undefine demo --remove-all-storage") [ -f "` + fail + `" ] && exit 1; rm -f "` + state + `"; exit 0 ;;
+  *) exit 0 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "virsh"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	if err := Destroy("demo", false); err == nil {
+		t.Fatal("Destroy succeeded while the VM still exists")
+	}
+	if _, err := os.Stat(state); err != nil {
+		t.Fatalf("VM state unexpectedly removed: %v", err)
+	}
+
+	if err := os.Remove(fail); err != nil {
+		t.Fatal(err)
+	}
+	if err := Destroy("demo", false); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Fatalf("VM state still exists: %v", err)
 	}
 }

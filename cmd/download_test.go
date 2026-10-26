@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/hazembook/kdeploy/internal/ui"
 )
+
+func boolPtr(v bool) *bool { return &v }
 
 func TestImageFilenameFromURL(t *testing.T) {
 	tests := []struct {
@@ -31,6 +37,8 @@ func TestImageFilenameFromURL(t *testing.T) {
 		"ftp://example.com/image.qcow2",
 		"https://example.com/",
 		"https://example.com",
+		"https://example.com/images/%2e%2e%2Fevil.qcow2",
+		"https://example.com/images/..",
 		"not a url",
 	} {
 		if _, err := imageFilenameFromURL(rawURL); err == nil {
@@ -39,19 +47,58 @@ func TestImageFilenameFromURL(t *testing.T) {
 	}
 }
 
-func TestRemoveDownloadFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "image.qcow2")
-	if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
+func TestResolveDownloadArg(t *testing.T) {
+	catalog := buildCatalog()
+	url, err := resolveDownloadArg(catalog, catalog[0].Key)
+	if err != nil {
+		t.Fatalf("resolve known key: %v", err)
+	}
+	if url != catalog[0].URL {
+		t.Fatalf("known key URL = %q, want %q", url, catalog[0].URL)
+	}
+
+	custom := "https://example.com/custom.qcow2"
+	url, err = resolveDownloadArg(catalog, custom)
+	if err != nil || url != custom {
+		t.Fatalf("resolve URL = %q, %v", url, err)
+	}
+
+	if _, err := resolveDownloadArg(catalog, "missing"); err == nil {
+		t.Fatal("unknown key accepted")
+	}
+}
+
+func TestConfirmDownloadOverwrite(t *testing.T) {
+	oldSkip := skipConfirm
+	defer func() { skipConfirm = oldSkip }()
+
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "image.qcow2")
+	if err := os.WriteFile(dest, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := removeDownloadFile(path, false); err != nil {
-		t.Fatalf("removeDownloadFile: %v", err)
+	u := ui.NewWithOptions(ui.Options{
+		Out:         os.Stdout,
+		Err:         os.Stderr,
+		Interactive: boolPtr(false),
+		Env:         []string{"TERM=dumb"},
+	})
+
+	skipConfirm = true
+	confirmed, err := confirmDownloadOverwrite(context.Background(), u, dest, "image.qcow2")
+	if err != nil || !confirmed {
+		t.Fatalf("--yes overwrite = %v, %v", confirmed, err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("file still exists: %v", err)
+
+	skipConfirm = false
+	if _, err := confirmDownloadOverwrite(context.Background(), u, dest, "image.qcow2"); !errors.Is(err, ui.ErrNonInteractive) {
+		t.Fatalf("non-interactive overwrite error = %v, want ErrNonInteractive", err)
 	}
-	if err := removeDownloadFile(path, false); err != nil {
-		t.Fatalf("removeDownloadFile missing: %v", err)
+
+	missing := filepath.Join(dir, "missing.qcow2")
+	confirmed, err = confirmDownloadOverwrite(context.Background(), u, missing, "missing.qcow2")
+	if err != nil || confirmed {
+		t.Fatalf("missing destination = %v, %v", confirmed, err)
 	}
 }
 

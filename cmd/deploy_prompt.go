@@ -187,7 +187,7 @@ func downloadImageInteractive(ctx context.Context, u *ui.UI, imgPath string) err
 	u.Status("Downloading %s", filename)
 	u.Muted("From: %s", rawURL)
 	u.Muted("To:   %s", dest)
-	if err := downloadFileWithOptions(rawURL, imgPath, hypervisor.NeedsPrivilegedPath(imgPath), overwrite); err != nil {
+	if err := downloadFileWithOptions(rawURL, imgPath, hypervisor.NeedsPrivilegedPath(imgPath)); err != nil {
 		return err
 	}
 	u.Success("Downloaded %s", filename)

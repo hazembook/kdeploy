@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/hazembook/kdeploy/internal/ui"
 	"github.com/hazembook/kdeploy/pkg/hypervisor"
 	"github.com/spf13/cobra"
 )
@@ -13,12 +14,12 @@ var shutdownCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		useSudo := hypervisor.NeedsSudo()
-		fmt.Printf("⏹  Shutting down VM: %s\n", name)
-		if err := hypervisor.VMShutdown(name, useSudo); err != nil {
-			return err
+		u := ui.New()
+		u.Status("Shutting down VM %q", name)
+		if err := hypervisor.VMShutdown(name, hypervisor.NeedsSudo()); err != nil {
+			return fmt.Errorf("shutdown %s: %w", name, err)
 		}
-		fmt.Printf("✅ VM '%s' shutting down\n", name)
+		u.Success("VM %q shutting down", name)
 		return nil
 	},
 }
