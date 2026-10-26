@@ -41,18 +41,19 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 
 ## Features
 
-- **Speed**: Deploy a VM in 14 seconds (with `-y` flag)
-- **Interactive Setup**: Guided configuration with sensible defaults
-- **Smart Path Handling**: User-owned or system-managed storage paths
-- **Image Download**: Built-in catalog of popular cloud images
-- **Automatic OS Detection**: Detects Rocky, Ubuntu, Debian, Alpine Linux from filename
-- **Resource Selection**: Choose RAM, vCPUs, and disk size
-- **SSH Config Management**: Automatic SSH host configuration
-- **Fast IP Discovery**: Uses DHCP leases (no qemu-guest-agent needed)
-- **Dependency Management**: Auto-detects and offers to install missing packages
-- **Pre-flight Checks**: KVM, libvirt, network, storage pool, disk space
-- **Permission Handling**: Auto-detects and offers to add user to libvirt group
-- **UTC Timezone**: Enforces UTC timezone for cloud-native standardization
+- **Speed**: Deploy a VM in seconds with `--yes`
+- **Guided interaction**: Charmbracelet forms for first-run setup, images, resources, and review
+- **Review before create**: Confirm the image, resources, storage, and SSH aliases before `virt-install`
+- **Safe defaults**: Destructive confirmations default to No; non-TTY without `--yes` fails early
+- **Scriptable output**: Final results on stdout, prompts/progress on stderr; plain output when piped
+- **Smart path handling**: User-owned or system-managed storage paths
+- **Image download**: Built-in catalog, custom URLs, and paused safe demos
+- **Automatic OS detection**: Detects Rocky, Ubuntu, Debian, and Alpine from the filename
+- **SSH config management**: Automatic host aliases and config cleanup
+- **Fast IP discovery**: Uses DHCP leases (no qemu-guest-agent needed)
+- **Dependency management**: `check` reports details, exits `1` on failure, and can install missing packages
+- **Pre-flight checks**: KVM, libvirt, network, tools, SSH key, and disk space
+- **UTC timezone**: Enforces UTC for cloud-native standardization
 
 ## Requirements
 
@@ -87,12 +88,21 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 git clone https://github.com/hazembook/kdeploy.git
 cd kdeploy
 
-# Build (requires Go 1.21+)
+# Build (requires Go 1.26+; produces one static binary)
 make build
 
 # Install globally
 cp bin/kdeploy ~/.local/bin/
 # or: make install  (not yet implemented)
+```
+
+`kdeploy` is one static Go binary. The interactive UI uses Charmbracelet Go
+libraries; `gum`, VHS, `ttyd`, and `ffmpeg` are **not** runtime dependencies.
+
+Quality gate for development:
+
+```bash
+make check   # gofmt check, go vet, and race tests
 ```
 
 ### Bash Script (Legacy)
@@ -164,29 +174,86 @@ kdeploy check --install    # Check + auto-install missing packages
 
 ## First Run Experience
 
+The first interactive `deploy` without a config file opens a form instead of
+asking for numbered choices:
+
+- **Image library**: `~/VM/cloud_images`, `/var/lib/libvirt/images`, or Custom.
+- **VM storage**: `/var/lib/libvirt/images`, `~/VM/disks`, or Custom.
+- Paths beginning with `~` are expanded.
+- System paths explain that sudo may be requested.
+- The config is saved atomically with mode `0600`.
+
+![First-run setup form](docs/media/first-run.gif)
+
+After setup, deploy scans the image library, collects resources and access
+settings, and shows a review panel. Nothing is created until **Create VM** is
+selected. **Cancel** leaves existing VMs and files untouched.
+
+## Interactive and scripted use
+
+### Streams
+
+| Stream | Content |
+|---|---|
+| stdout | Final results: lists, info, IP, check report, download catalog, deploy summary |
+| stderr | Prompts, forms, spinners, progress, warnings, errors, review panels |
+
+Piping stdout switches to plain output: no ANSI, no spinner, stable
+tab-separated tables. `kdeploy ip` always prints one plain line to stdout.
+
+### TTY and `--yes`
+
+- Interactive prompts need a terminal on stdin and stderr (`TERM=dumb` disables them).
+- `--yes` / `-y` is fully non-interactive and uses config/built-in defaults.
+- Non-TTY without `--yes` fails before destructive action.
+- `deploy --yes` uses the first available image; it will not download blindly.
+- `download --yes` overwrites an existing image without prompting.
+- `destroy` and `download` overwrite confirmations default to **No**.
+- Ctrl+C in a form prints `Cancelled.` and exits `130`.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success; for `check`, every dependency passed |
+| `1` | Error, failed/incomplete check, declined install, or declined destroy |
+| `130` | Cancelled with Ctrl+C |
+
+`kdeploy check` exits `0` only when all checks pass. `kdeploy --version` prints
+the injected build version and does not touch config or VM state.
+
+### Colors
+
+Set `NO_COLOR=1` to disable color. `TERM=dumb` and piped stdout use plain mode.
+
+## Demos
+
+Safe terminal recordings are committed under [`docs/media/`](docs/media/) and
+are regenerated by developers with [VHS](https://github.com/charmbracelet/vhs):
+
+```bash
+make demo   # requires vhs, ttyd, and ffmpeg; not part of make check
 ```
-🎯 First-time setup - configuring paths...
 
-📂 Image Library Path
-   [1] ~/VM/cloud_images (user-owned, recommended)
-   [2] /var/lib/libvirt/images (system-managed)
-   [3] Custom path
+The safe tapes use disposable fixtures and fake VM tools. Deploy cancels at
+review, destroy presses the default No, and download cancels before a transfer.
+The recordings never create, stop, or delete a real VM. See
+[`demo/README.md`](demo/README.md) for the tape list and safety rules.
 
-   Choice [1]: 1
+| Flow | 120 columns | 80 columns |
+|---|---|---|
+| Deploy review | ![Deploy at 120 columns](docs/media/deploy-120.gif) | ![Deploy at 80 columns](docs/media/deploy-80.gif) |
+| Download picker | ![Download at 120 columns](docs/media/download-120.gif) | ![Download at 80 columns](docs/media/download-80.gif) |
+| Destroy confirmation | ![Destroy at 120 columns](docs/media/destroy-120.gif) | ![Destroy at 80 columns](docs/media/destroy-80.gif) |
 
-💾 VM Storage Path
-   [1] /var/lib/libvirt/images (libvirt standard)
-   [2] ~/VM/disks (user-owned)
-   [3] Custom path
-
-   Choice [1]: 2
-
-✅ Configuration saved to ~/.config/kdeploy.conf
-```
+More stills: [first-run setup](docs/media/first-run-setup.png),
+[deploy review at 80 columns](docs/media/deploy-80-review.png),
+[deploy review at 120 columns](docs/media/deploy-120-review.png).
 
 ## Configuration
 
-Configuration is stored in `~/.config/kdeploy.conf`:
+Configuration is stored in `~/.config/kdeploy.conf`, atomically written with
+mode `0600`:
 
 ```bash
 IMAGE_PATH=/home/user/VM/cloud_images
@@ -196,6 +263,17 @@ DEFAULT_RAM=2048
 DEFAULT_CPUS=2
 DEFAULT_PASSWORD=linux
 ```
+
+`DEFAULT_PASSWORD` is stored in plaintext for compatibility with the existing
+config contract. `config show` and the interactive review mask it; do not use a
+real secret unless you accept that file-permission model. Override the path with
+`--config`, or re-run the wizard with `kdeploy --reconfig`.
+
+Resolution order for deploy values is **explicit flag > config file > built-in
+default**.
+
+See [`docs/ui-refresh.md`](docs/ui-refresh.md) for the full UX contract and
+[`docs/decisions.md`](docs/decisions.md) for the curated decision log.
 
 ## Use Cases
 
@@ -346,6 +424,8 @@ end
 - ✅ **Go rewrite**: Full feature parity with the bash script
 - ✅ **Built-in virsh commands**: No more shell aliases needed
 - ✅ **Dependency management**: Auto-detect and install missing packages
+- ✅ **Tier B UI refresh**: Charmbracelet forms, review flow, safe defaults, plain output
+- ⬜ **Native Go downloader**: Styled progress without `wget`/`curl`
 - ⬜ **Pure-Go ISO 9660**: Replace `cloud-localds` dependency
 - ⬜ **Native libvirt**: Direct Unix socket (`libvirt.so`) binding
 - ⬜ **Concurrent deploys**: Multi-VM lab orchestration via goroutines

@@ -1,6 +1,6 @@
 # kdeploy Agent Instructions
 
-> **Stable Phase**: All work branches from and merges to `main`. Pushes to `origin` are allowed. The rewrite has reached full feature parity with the bash script with thorough tests.
+> **Stable Phase**: All work branches from and merges to `main` (fast-forward only). Pushes to `origin` happen only after explicit human confirmation. The rewrite has reached full feature parity with the bash script with thorough tests.
 
 <!-- BEGIN BR INTEGRATION v:1 profile:full -->
 
@@ -71,7 +71,7 @@ br close <id> --reason "Substantive summary of what was done" --actor "$ACTOR" -
    - `mcp__semble__search` — search the codebase by intent/concept
    - `git log --follow <affected-files>` — check for prior changes
 5. **Present an investigation report** (see Reports section). **Wait for explicit human approval before implementing.**
-6. **Implement, run quality gates** (`make build && make vet && make test`) on the branch
+6. **Implement, run quality gates** (`make check`) on the branch
 7. **Present a thorough handoff report** (see Reports section) and **stop and wait for explicit human confirmation** — the agent never assumes approval from a "thanks" or "looks good" alone
 8. **After explicit confirmation, run the publish steps** (see Session Completion)
 
@@ -89,7 +89,7 @@ git add -A && git commit -m "wip: <id> partial checkpoint"
 git switch -c feat/<next-id>
 # When returning:
 git switch <paused-branch>
-git rebase golang-rewrite-experiment
+git rebase main
 # continue
 ```
 
@@ -127,16 +127,16 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
 - **Task**: br issue ID and title
 - **Key commits**: `git log --oneline` of work commits
 - **Diff highlights**: what changed and why
-- **Quality gates**: `make build`, `make vet`, `make test` results
+- **Quality gates**: `make check` (and `git diff --check`) results
 - **What was NOT done**: deferred work, known limitations, follow-up issues
-- **Suggested merge message**: proposed commit message for `golang-rewrite-experiment`
+- **Suggested merge message**: proposed commit message for `main`
 
 ## Session Completion
 
 ### Agent handoff (end of session)
 
 1. **File issues for remaining work** — anything noticed but not fixed
-2. **Run quality gates** on the branch — `make build && make vet && make test`
+2. **Run quality gates** on the branch — `make check`
 3. **Present handoff report** to the human
 4. **Stop and wait for explicit confirmation** — "thanks" or "looks good" is NOT approval
 
@@ -177,17 +177,25 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
 ## Build & Test
 
 ```bash
-make build        # Build into bin/kdeploy
-make format       # gofmt + goimports
+make build        # Build the version-injected binary into bin/
+make check        # gofmt check + go vet + go test -race (required gate)
+make format       # gofmt + goimports (writes)
 make vet          # go vet ./...
 make test         # go test ./... -v
 make lint         # format + vet + golangci-lint
+make demo         # optional dev-only VHS render; never part of make check
 make clean        # rm -rf bin/
 ```
 
+Every implementation phase must end with `make check`. `make demo` requires
+VHS, `ttyd`, and `ffmpeg`; those are development tools, not Go dependencies.
+
 ## Architecture Overview
 
-- **Entry point**: `main.go` → `cmd.Execute()` (Cobra CLI)
+- **Entry point**: `main.go` → `cmd.Execute()` (Cobra + `fang`)
+- **UI layer**: `internal/ui/` owns the Huh form theme, Lip Gloss output,
+  width/TTY detection, plain renderer, spinner, and cancellation mapping.
+  It must not import `cmd` or `pkg`.
 - **Commands**: `cmd/root.go` (flags), `cmd/deploy.go`, `cmd/destroy.go`, `cmd/download.go`, `cmd/check.go`, `cmd/config.go`, `cmd/list.go`, `cmd/info.go`, `cmd/start.go`, `cmd/shutdown.go`, `cmd/stop.go`, `cmd/reboot.go`, `cmd/console.go`, `cmd/edit.go`, `cmd/ip.go`
 - **Packages** (`pkg/`):
   - `pkg/config/` — `~/.config/kdeploy.conf` key=value parser
@@ -204,13 +212,26 @@ make clean        # rm -rf bin/
 
 ## Conventions & Patterns
 
-- **Go style**: stdlib first, minimal dependencies. Cobra for CLI, no framework.
+- **Go style**: stdlib first, minimal dependencies. Cobra for CLI. Charmbracelet Go libraries (`fang`, `huh`, `lipgloss`) are the approved interaction exception; do not add `gum` or another UI framework.
+- **Charm boundaries**: `cmd` composes commands and forms; `internal/ui` owns theme/rendering/TTY/cancellation; `pkg/*` must not import Charm or `internal/ui`. Bubble Tea stays indirect through `huh` unless direct use is explicitly approved.
+- **Stream contract**: final data results go to stdout; prompts, forms, spinners, progress, headings, warnings, and errors go to stderr. Piped stdout is plain: no ANSI, ASCII symbols, stable tab-separated tables. `kdeploy ip` is always one plain stdout line.
+- **Interaction contract**: prompts require a TTY on stdin and stderr (and `TERM != dumb`). `--yes` is fully non-interactive. Non-TTY without `--yes` fails before destructive action. Destructive confirmations default to No. Ctrl+C in a form maps to exit `130`; `check` exits `0` only when all checks pass, otherwise `1`.
 - **Error handling**: wrap errors with `%w` using `fmt.Errorf("context: %w", err)`. Return early on failure in deploy pipeline.
-- **Testing**: std `testing` package, table-driven tests for pure functions, integration tests for hypervisor/ssh (gated on virsh availability).
+- **Testing**: std `testing` package, table-driven tests for pure functions, integration tests for hypervisor/ssh (gated on virsh availability). UI policy tests belong in `internal/ui`; command policy tests in `cmd`.
 - **Commit messages**: Conventional Commits (`type(scope): message`), imperative mood, ≤ 72 chars. Use footer `Refs: br-xxx` for issue linkage.
-- **Branches**: `feat/<short-description>` off `golang-rewrite-experiment`. One branch per task. Do not push — local-only. Targets `main` once the rewrite is stable with thorough tests.
+- **Branches**: `feat/<short-description>` off `main`. One branch per task. Do not push until the handoff is explicitly approved; merge fast-forward into `main` only after that.
 - **Config format**: `~/.config/kdeploy.conf` — `KEY=VAL` lines, `#` comments. Keys: `IMAGE_PATH`, `STORAGE_PATH`, `DEFAULT_VM_SIZE`, `DEFAULT_RAM`, `DEFAULT_CPUS`, `DEFAULT_PASSWORD`.
 - **Code comments**: keep code self-documenting. No TODO/FIXME/HACK markers — use br. No commented-out code.
+- **New output**: use the shared `internal/ui` helpers. Never write a prompt to stdout. Add a plain golden test when adding a table and a manual TTY check for a new form.
+
+## Demos
+
+- `demo/` contains developer-only VHS tapes and `setup.sh`; `docs/media/` contains the committed captures.
+- `make demo` is the only supported render command and is **not** part of `make check`.
+- Tapes must use fake `virsh`/runtime tools and disposable paths under `/var/tmp/kdeploy-demo`. Deploy cancels at review; destroy keeps the default No; download cancels before transfer.
+- A recording must never create, stop, or delete a real VM, or touch real config/images/disks/SSH files.
+- There is no checked-in full-deploy tape. A real deploy recording is opt-in and manual, never part of CI or `make demo`.
+- VHS, `ttyd`, and `ffmpeg` are development tools; they must not enter `go.mod` or the runtime binary.
 
 ## Environment
 
