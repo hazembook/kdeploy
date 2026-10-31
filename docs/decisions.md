@@ -1,7 +1,7 @@
 # kdeploy decisions
 
 Durable decisions for the Go rewrite and the Tier B UI refresh. Last updated
-2026-10-26. The approved implementation plan remains the source for the
+2026-10-31. The approved implementation plan remains the source for the
 phase-by-phase rollout; this file records the choices that should survive it.
 
 ## Stack and scope
@@ -66,6 +66,14 @@ phase-by-phase rollout; this file records the choices that should survive it.
 | D32 | `make demo` renders only safe tapes and is not part of `make check` | VHS/ttyd/ffmpeg are developer tools, not build requirements |
 | D33 | The first-run setup gets its own tape; deploy recordings start from a disposable config | Keeps each tape focused and avoids fragile form-to-form input timing |
 | D34 | Styled terminal output is reviewed through VHS/PNG artifacts; Go golden tests remain the authority for plain output | Avoid brittle ANSI golden tests while keeping deterministic gates |
+
+## Repository and release workflow
+
+| ID | Decision | Reason |
+|---|---|---|
+| D42 | **Only the human pushes.** The agent commits locally, runs the gates, and stops with a handoff; it never runs `git push` and never creates, moves, or deletes remote refs or tags | A single owner needs to drop, reword, reset, or rebase local history before publishing; an agent push would race that review |
+| D43 | Keep the remote layout `origin` = Codeberg, `lab` = GitLab, `hub` = GitHub, with `main` tracking `origin/main`; do not rename remotes | Preserves existing tracking and credentials; Codeberg is the canonical primary |
+| D44 | `v3.4` stays as the legacy bash release; the Go rewrite is versioned `v0.0.1` (scaffold at `30ebdd1`) and `v0.1.0` (Charm UI refresh, personal beta) | Tags label commits, not ranges; the bash and Go eras stay historically accurate without rewriting tags |
 
 ## Deferred work
 

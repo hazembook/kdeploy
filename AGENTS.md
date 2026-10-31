@@ -1,6 +1,8 @@
 # kdeploy Agent Instructions
 
-> **Stable Phase**: All work branches from and merges to `main` (fast-forward only). Pushes to `origin` happen only after explicit human confirmation. The rewrite has reached full feature parity with the bash script with thorough tests.
+> **Stable Phase**: All work branches from and merges to `main` (fast-forward only). The rewrite has reached full feature parity with the bash script with thorough tests.
+>
+> **Push policy**: The agent **never pushes** — not to `origin`, `lab`, `hub`, or any other remote, and not tags. It commits locally, runs the gates, and stops with a handoff. The human pushes manually so they can drop, reword, reset, or rebase local history before publishing.
 
 <!-- BEGIN BR INTEGRATION v:1 profile:full -->
 
@@ -80,8 +82,8 @@ Rationale: single-owner project. The agent works on isolated, reproducible steps
 ### Human-in-the-Loop Split
 
 - **Agent** owns: check br, branch, claim, investigate, present investigation report, implement, test, quality gates, present handoff report
-- **Human** owns: review investigation report (approve approach), review diff + handoff (approve publish)
-- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to `main`, clean up branch, push to origin
+- **Human** owns: review investigation report (approve approach), review diff + handoff (approve publish), **all pushes and tags**
+- **After confirmation, agent** owns: `br close`, commit JSONL export, ff-merge to `main`, clean up branch — then **stops**. The human pushes.
 
 **Pausing a task (work not finished):**
 ```bash
@@ -154,13 +156,14 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
    ```
    The `--reason` must be a substantive summary, not git bookkeeping.
 
-8. **Fast-forward `main` and push:**
+8. **Fast-forward `main` locally (no push):**
    ```bash
    git rebase main
    git switch main
    git merge <feat-branch>   # fast-forward
-   git push origin main
    ```
+   The agent stops here. The human reviews `git log` / `git diff` and pushes
+   manually (`git push <remote> main` and any tags) when ready.
 
 9. **Delete the local feature branch:**
    ```bash
@@ -168,7 +171,7 @@ Presented after quality gates pass, before publishing. Wait for explicit confirm
    ```
 
 **CRITICAL RULES:**
-- The agent **never** force-pushes (`--force` / `--force-with-lease`)
+- The agent **never** pushes (`git push`), force-pushes, or creates/deletes remote refs or tags — all publishing is human-only
 - A "thanks" or "looks good" is **not** approval
 - If the agent hits a git state it can't recover from, it commits a `wip:` checkpoint and hands off
 
@@ -219,7 +222,7 @@ VHS, `ttyd`, and `ffmpeg`; those are development tools, not Go dependencies.
 - **Error handling**: wrap errors with `%w` using `fmt.Errorf("context: %w", err)`. Return early on failure in deploy pipeline.
 - **Testing**: std `testing` package, table-driven tests for pure functions, integration tests for hypervisor/ssh (gated on virsh availability). UI policy tests belong in `internal/ui`; command policy tests in `cmd`.
 - **Commit messages**: Conventional Commits (`type(scope): message`), imperative mood, ≤ 72 chars. Use footer `Refs: br-xxx` for issue linkage.
-- **Branches**: `feat/<short-description>` off `main`. One branch per task. Do not push until the handoff is explicitly approved; merge fast-forward into `main` only after that.
+- **Branches**: `feat/<short-description>` off `main`. One branch per task. Merge fast-forward into `main` only after explicit approval. **Never push**; the human publishes manually.
 - **Config format**: `~/.config/kdeploy.conf` — `KEY=VAL` lines, `#` comments. Keys: `IMAGE_PATH`, `STORAGE_PATH`, `DEFAULT_VM_SIZE`, `DEFAULT_RAM`, `DEFAULT_CPUS`, `DEFAULT_PASSWORD`.
 - **Code comments**: keep code self-documenting. No TODO/FIXME/HACK markers — use br. No commented-out code.
 - **New output**: use the shared `internal/ui` helpers. Never write a prompt to stdout. Add a plain golden test when adding a table and a manual TTY check for a new form.
