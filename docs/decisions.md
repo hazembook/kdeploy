@@ -73,7 +73,8 @@ phase-by-phase rollout; this file records the choices that should survive it.
 |---|---|---|
 | D42 | **Only the human pushes.** The agent commits locally, runs the gates, and stops with a handoff; it never runs `git push` and never creates, moves, or deletes remote refs or tags | A single owner needs to drop, reword, reset, or rebase local history before publishing; an agent push would race that review |
 | D43 | Keep the remote layout `origin` = Codeberg, `lab` = GitLab, `hub` = GitHub, with `main` tracking `origin/main`; do not rename remotes | Preserves existing tracking and credentials; Codeberg is the canonical primary |
-| D44 | `v3.4` stays as the legacy bash release; the Go rewrite is versioned `v0.0.1` (scaffold at `30ebdd1`) and `v0.1.0` (Charm UI refresh, personal beta) | Tags label commits, not ranges; the bash and Go eras stay historically accurate without rewriting tags |
+| D44 | `v3.4` stays as the legacy bash release; the Go rewrite is versioned `v0.0.1` (scaffold at `30ebdd1`) and `v0.1.0` (first usable Go release, alpha) | Tags label commits, not ranges; the bash and Go eras stay historically accurate without rewriting tags |
+| D45 | Version bumps belong to program releases, not docs-only commits: `0.1.x` for fixes, `0.x.0` for features/UX, `1.0.0` for a frozen CLI/config/output contract | Keeps tags meaningful and avoids tagging every documentation change |
 
 ## Deferred work
 

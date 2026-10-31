@@ -2,6 +2,10 @@
 
 A fast, interactive CLI tool for deploying KVM virtual machines from cloud images.
 
+> **Status: alpha.** Usable for everyday VM provisioning, but commands, flags,
+> config, and output may still change. Use external backups for irreplaceable
+> VM disks.
+
 ## Overview
 
 **kdeploy** automates the creation of KVM virtual machines using cloud-init enabled cloud images (qcow2 format). What used to take 15-30 minutes of GUI installation now takes under 2 minutes.
@@ -11,7 +15,7 @@ A fast, interactive CLI tool for deploying KVM virtual machines from cloud image
 - **Speed**: Deploy a VM in under 2 minutes
 - **No GUI Needed**: Fully automated, command-line driven
 - **Cloud-Init Integration**: Automatic SSH key injection, user setup, and package installation
-- **Multiple Distros**: Support for Rocky Linux (10, 9, 8), Ubuntu (24.04, 22.04, 20.04), Debian (13, 12, 11), and more
+- **Multiple Distros**: Support for Rocky Linux (10, 9, 8), Ubuntu (24.04, 22.04, 20.04), and Debian (13, 12, 11)
 - **Interactive**: Guided setup with sensible defaults
 - **Open Source**: Released under the Waqf Public License
 
@@ -29,7 +33,7 @@ The combination of these three technologies completely changed how I work with V
 
 kdeploy creates VMs in three simple steps:
 
-1. **Download a Cloud Image**: Fetch a pre-configured minimal OS image in qcow2 format (~1GB) from upstream providers like Rocky Linux, Ubuntu, Debian, or Fedora.
+1. **Download a Cloud Image**: Fetch a pre-configured minimal OS image in qcow2 format (~1GB) from upstream providers like Rocky Linux, Ubuntu, or Debian.
 
 2. **Create an Overlay**: Generate a copy-on-write snapshot that references the base image. This is fast to create and leaves the original image untouched.
 
@@ -84,8 +88,8 @@ This is essentially how AWS, DigitalOcean, and other cloud providers create VMs 
 ### Go Rewrite (Recommended)
 
 ```bash
-# Clone
-git clone https://github.com/hazembook/kdeploy.git
+# Clone (Codeberg is primary; GitLab and GitHub are mirrors)
+git clone https://codeberg.org/hazembook/kdeploy.git
 cd kdeploy
 
 # Build (requires Go 1.26+; produces one static binary)
@@ -95,6 +99,9 @@ make build
 cp bin/kdeploy ~/.local/bin/
 # or: make install  (not yet implemented)
 ```
+
+Mirrors: [GitLab](https://gitlab.com/hazembook/kdeploy) ·
+[GitHub](https://github.com/hazembook/kdeploy).
 
 `kdeploy` is one static Go binary. The interactive UI uses Charmbracelet Go
 libraries; `gum`, VHS, `ttyd`, and `ffmpeg` are **not** runtime dependencies.
@@ -107,8 +114,9 @@ make check   # gofmt check, go vet, and race tests
 
 ### Bash Script (Legacy)
 
-The original bash script `kdeploy` also ships in the repo root. It requires no build step.<br>
-*Note: all development is now focused on the Go version.*
+The original bash script `kdeploy` also ships in the repo root and is tagged
+`v3.4`. It requires no build step. All development is now focused on the Go
+version.
 
 ## Commands
 
@@ -417,6 +425,20 @@ function vxx
 end 
 ```
 
+## Versioning
+
+kdeploy follows SemVer on a `0.x` line while it is alpha:
+
+| Tag | Meaning |
+|---|---|
+| `v3.4` | Legacy bash script release |
+| `v0.0.1` | Go rewrite scaffold |
+| `v0.1.0` | First usable Go release: feature parity + Charm UI refresh |
+
+Version bumps belong to program releases, not docs-only commits. Patch releases
+(`0.1.x`) carry fixes; minor releases (`0.x.0`) carry new features or UX
+changes. `v1.0.0` will mark a frozen CLI, config, and output contract.
+
 ---
 
 ## Roadmap
@@ -425,6 +447,8 @@ end
 - ✅ **Built-in virsh commands**: No more shell aliases needed
 - ✅ **Dependency management**: Auto-detect and install missing packages
 - ✅ **Tier B UI refresh**: Charmbracelet forms, review flow, safe defaults, plain output
+- ⬜ **Backup and restore**: Durable VM backups (XML + flattened disk + manifest)
+- ⬜ **Snapshots**: Quick rollback via `virsh snapshot-create-as`
 - ⬜ **Native Go downloader**: Styled progress without `wget`/`curl`
 - ⬜ **Pure-Go ISO 9660**: Replace `cloud-localds` dependency
 - ⬜ **Native libvirt**: Direct Unix socket (`libvirt.so`) binding

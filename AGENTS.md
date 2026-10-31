@@ -1,6 +1,6 @@
 # kdeploy Agent Instructions
 
-> **Stable Phase**: All work branches from and merges to `main` (fast-forward only). The rewrite has reached full feature parity with the bash script with thorough tests.
+> **Alpha Phase**: All work branches from and merges to `main` (fast-forward only). The rewrite has reached feature parity with the bash script, but the project is still alpha: commands, flags, config, and output may change.
 >
 > **Push policy**: The agent **never pushes** — not to `origin`, `lab`, `hub`, or any other remote, and not tags. It commits locally, runs the gates, and stops with a handoff. The human pushes manually so they can drop, reword, reset, or rebase local history before publishing.
 
