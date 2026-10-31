@@ -91,7 +91,7 @@ disabled to keep the command surface unchanged. `--version` and `-v` print the
 version injected at build time, for example:
 
 ```text
-kdeploy version v3.4-80-gf9d571d
+kdeploy version v0.1.0
 ```
 
 `--help` and `--version` do not load config or touch libvirt or a VM.
